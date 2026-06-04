@@ -3,10 +3,11 @@ import {
   Upload, File, FileImage, FileText, Code, Archive,
   Trash2, Search, ExternalLink, RefreshCw, X, AlertCircle, CheckCircle2, Download, Pencil,
   Activity, Clock, Folder, FolderPlus, ChevronRight, ChevronLeft, Move, CornerDownRight,
-  Share2, Copy, Check, Calendar, Lock, ArrowUp, ArrowDown, ArrowUpDown
+  Share2, Copy, Check, Calendar, Lock, ArrowUp, ArrowDown, ArrowUpDown, Columns
 } from 'lucide-react';
-import { UploadedFile, ActivityLog, Folder as FolderType, SharedLink } from '../types.js';
+import { UploadedFile, ActivityLog, Folder as FolderType, SharedLink, User } from '../types.js';
 import { Api } from '../utils/api.js';
+import { offlineDb } from '../utils/offlineDb.js';
 import FilePreviewModal from './FilePreviewModal.js';
 import { useNotification } from './NotificationCenter.js';
 
@@ -19,10 +20,14 @@ interface DashboardProps {
   onAnalyzeFile?: (fileId: string) => Promise<boolean>;
   isLoading: boolean;
   onRefreshFiles?: () => void;
+  user?: User;
 }
 
-export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteMultipleFiles, onRenameFile, onAnalyzeFile, isLoading, onRefreshFiles }: DashboardProps) {
+export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteMultipleFiles, onRenameFile, onAnalyzeFile, isLoading, onRefreshFiles, user }: DashboardProps) {
   const { showSuccess, showError, showInfo } = useNotification();
+  const compactMode = user?.preferences?.compactLayout ?? false;
+  const paddingClass = compactMode ? 'px-4 py-1.5' : 'px-5 py-4';
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [fileFilter, setFileFilter] = useState<'all' | 'image' | 'pdf' | 'archive' | 'document'>('all');
   const [isDragging, setIsDragging] = useState(false);
@@ -48,6 +53,15 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
   const [folders, setFolders] = useState<FolderType[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [isFoldersLoading, setIsFoldersLoading] = useState(false);
+
+  // --- Optional Two-Pane States ---
+  const [isTwoPane, setIsTwoPane] = useState(false);
+  const [pane1FolderId, setPane1FolderId] = useState<string | null>(null);
+  const [pane2FolderId, setPane2FolderId] = useState<string | null>(null);
+  const [draggingItem, setDraggingItem] = useState<{ id: string; type: 'file' | 'folder'; sourcePaneId?: 'pane1' | 'pane2' } | null>(null);
+  const [pane1AddingFolder, setPane1AddingFolder] = useState(false);
+  const [pane2AddingFolder, setPane2AddingFolder] = useState(false);
+  const [inlineFolderName, setInlineFolderName] = useState('');
   
   // Folder Creation Mode
   const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -202,12 +216,29 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
   const fetchFolders = async () => {
     setIsFoldersLoading(true);
     try {
-      const res = await Api.getFolders();
-      if (res.success && res.data) {
-        setFolders(res.data);
+      if (navigator.onLine) {
+        const res = await Api.getFolders();
+        if (res.success && res.data) {
+          setFolders(res.data);
+          offlineDb.saveFolders(res.data);
+        } else {
+          const cached = await offlineDb.getFolders();
+          if (cached && cached.length > 0) {
+            setFolders(cached);
+          }
+        }
+      } else {
+        const cached = await offlineDb.getFolders();
+        if (cached && cached.length > 0) {
+          setFolders(cached);
+        }
       }
     } catch (e) {
-      console.warn('Failed to fetch folder list:', e);
+      console.warn('Failed to fetch folder list, fallback to cache:', e);
+      const cached = await offlineDb.getFolders();
+      if (cached && cached.length > 0) {
+        setFolders(cached);
+      }
     } finally {
       setIsFoldersLoading(false);
     }
@@ -218,21 +249,19 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
     fetchSharedLinks();
   }, []);
 
-  const handleCreateFolder = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!newFolderName.trim()) return;
+  const handleCreateFolderDirect = async (folderName: string, parentFolderId: string | null) => {
+    if (!folderName.trim()) return false;
     setIsCreatingFolder(true);
     setAlertInfo(null);
     try {
-      const res = await Api.createFolder(newFolderName.trim(), currentFolderId);
+      const res = await Api.createFolder(folderName.trim(), parentFolderId);
       if (res.success && res.data) {
         setFolders(prev => [res.data!, ...prev]);
-        setNewFolderName('');
-        setShowCreateFolder(false);
         const successMsg = `Created folder "${res.data.name}" successfully.`;
         setAlertInfo({ type: 'success', message: successMsg });
         showSuccess(successMsg);
         fetchLogs();
+        return true;
       } else {
         const errorMsg = res.error || 'Failed to create folder.';
         setAlertInfo({ type: 'error', message: errorMsg });
@@ -244,6 +273,49 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
       showError(errorMsg);
     } finally {
       setIsCreatingFolder(false);
+    }
+    return false;
+  };
+
+  const handleCreateFolder = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newFolderName.trim()) return;
+    const ok = await handleCreateFolderDirect(newFolderName, currentFolderId);
+    if (ok) {
+      setNewFolderName('');
+      setShowCreateFolder(false);
+    }
+  };
+
+  const handleCreateInlineFolder = async (e: React.FormEvent, paneId: 'pane1' | 'pane2', parentFolderId: string | null) => {
+    e.preventDefault();
+    if (!inlineFolderName.trim()) return;
+    const ok = await handleCreateFolderDirect(inlineFolderName, parentFolderId);
+    if (ok) {
+      setInlineFolderName('');
+      if (paneId === 'pane1') setPane1AddingFolder(false);
+      else setPane2AddingFolder(false);
+    }
+  };
+
+  const handlePaneFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, targetFolderId: string | null) => {
+    const rawFile = e.target.files?.[0];
+    if (!rawFile) return;
+    
+    setIsUploading(true);
+    try {
+      const success = await onUploadFile(rawFile, targetFolderId);
+      if (success) {
+        showSuccess(`Uploaded and encrypted "${rawFile.name}" successfully!`);
+        onRefreshFiles?.();
+      } else {
+        showError('Upload failed.');
+      }
+    } catch (err: any) {
+      showError(err.message || 'Error occurred during secure upload.');
+    } finally {
+      setIsUploading(false);
+      e.target.value = ''; // Reset input
     }
   };
 
@@ -352,17 +424,176 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
     }
   };
 
-  const getBreadcrumbs = () => {
+  const getBreadcrumbsForId = (folderId: string | null) => {
     const crumbs: { id: string | null; name: string }[] = [{ id: null, name: 'Vault Root' }];
-    if (!currentFolderId) return crumbs;
+    if (!folderId) return crumbs;
     
     const pathList: { id: string; name: string }[] = [];
-    let curr = folders.find(f => f.id === currentFolderId);
+    let curr = folders.find(f => f.id === folderId);
     while (curr) {
       pathList.unshift({ id: curr.id, name: curr.name });
       curr = curr.parentId ? folders.find(f => f.id === curr!.parentId) : undefined;
     }
     return [...crumbs, ...pathList];
+  };
+
+  const getBreadcrumbs = () => {
+    return getBreadcrumbsForId(currentFolderId);
+  };
+
+  const getFilesForPane = (paneFolderId: string | null) => {
+    return files.filter(f => {
+      // Hide trashed files from standard view and folder routes
+      if (f.isTrashed) return false;
+
+      const matchesFolder = searchTerm ? true : (f.folderId || null) === paneFolderId;
+      if (!matchesFolder) return false;
+
+      const matchesSearch = f.name.toLowerCase().includes(searchTerm.toLowerCase());
+      if (!matchesSearch) return false;
+
+      const mime = f.mimeType.toLowerCase();
+      if (fileFilter === 'image') return mime.startsWith('image/');
+      if (fileFilter === 'pdf') return mime === 'application/pdf';
+      if (fileFilter === 'archive') return mime.includes('zip') || mime.includes('tar') || mime.includes('rar') || mime.includes('7z');
+      if (fileFilter === 'document') return mime.includes('word') || mime.includes('excel') || mime.includes('powerpoint') || mime.includes('text') || mime === 'application/msword';
+      
+      return true;
+    }).sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'name') {
+        comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+      } else if (sortBy === 'createdAt') {
+        comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      } else if (sortBy === 'size') {
+        comparison = (a.size || 0) - (b.size || 0);
+      } else if (sortBy === 'mimeType') {
+        comparison = a.mimeType.localeCompare(b.mimeType, undefined, { sensitivity: 'base' });
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+  };
+
+  const getFoldersForPane = (paneFolderId: string | null) => {
+    return folders.filter(f => {
+      const matchesFolder = searchTerm ? true : (f.parentId || null) === paneFolderId;
+      if (!matchesFolder) return false;
+
+      const matchesSearch = f.name.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
+    });
+  };
+
+  // --- HTML5 Drag and Drop event handlers ---
+  const handleDragStart = (e: React.DragEvent, id: string, type: 'file' | 'folder', sourcePaneId?: 'pane1' | 'pane2') => {
+    setDraggingItem({ id, type, sourcePaneId });
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/json', JSON.stringify({ id, type, sourcePaneId }));
+  };
+
+  const handleDragOverItem = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDropOnFolderCard = async (e: React.DragEvent, targetFolderId: string) => {
+    e.preventDefault();
+    let dragData = draggingItem;
+    if (!dragData) {
+      try {
+        const raw = e.dataTransfer.getData('application/json');
+        if (raw) dragData = JSON.parse(raw);
+      } catch (err) {}
+    }
+    if (!dragData) return;
+
+    const { id: draggedId, type: draggedType } = dragData;
+    if (draggedType === 'folder' && draggedId === targetFolderId) {
+      showError("Cannot move a folder into itself.");
+      return;
+    }
+
+    try {
+      let success = false;
+      let errMsg = '';
+      if (draggedType === 'file') {
+        const res = await Api.moveFile(draggedId, targetFolderId);
+        success = res.success;
+        errMsg = res.error || 'Failed to move file.';
+      } else {
+        const res = await Api.moveFolder(draggedId, targetFolderId);
+        success = res.success;
+        errMsg = res.error || 'Failed to move folder.';
+      }
+
+      if (success) {
+        showSuccess("Successfully moved item!");
+        onRefreshFiles?.();
+        fetchFolders();
+      } else {
+        showError(errMsg);
+      }
+    } catch (err: any) {
+      showError(err.message || "Failed to move item.");
+    } finally {
+      setDraggingItem(null);
+    }
+  };
+
+  const handleDropOnPaneArea = async (e: React.DragEvent, targetFolderId: string | null) => {
+    e.preventDefault();
+    let dragData = draggingItem;
+    if (!dragData) {
+      try {
+        const raw = e.dataTransfer.getData('application/json');
+        if (raw) dragData = JSON.parse(raw);
+      } catch (err) {}
+    }
+    if (!dragData) return;
+
+    const { id: draggedId, type: draggedType } = dragData;
+    
+    if (draggedType === 'folder') {
+      const folderObj = folders.find(f => f.id === draggedId);
+      if (folderObj && folderObj.parentId === targetFolderId) {
+        return; // already there
+      }
+      if (draggedId === targetFolderId) {
+        showError("Cannot move folder into itself.");
+        return;
+      }
+    } else {
+      const fileObj = files.find(f => f.id === draggedId);
+      if (fileObj && fileObj.folderId === targetFolderId) {
+        return; // already there
+      }
+    }
+
+    try {
+      let success = false;
+      let errMsg = '';
+      if (draggedType === 'file') {
+        const res = await Api.moveFile(draggedId, targetFolderId);
+        success = res.success;
+        errMsg = res.error || 'Failed to move file.';
+      } else {
+        const res = await Api.moveFolder(draggedId, targetFolderId);
+        success = res.success;
+        errMsg = res.error || 'Failed to move folder.';
+      }
+
+      if (success) {
+        showSuccess("Successfully moved item!");
+        onRefreshFiles?.();
+        fetchFolders();
+      } else {
+        showError(errMsg);
+      }
+    } catch (err: any) {
+      showError(err.message || "Failed to move item.");
+    } finally {
+      setDraggingItem(null);
+    }
   };
 
   // Activity Log states
@@ -715,6 +946,292 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
     document.body.removeChild(link);
   };
 
+  const renderPane = (
+    paneId: 'pane1' | 'pane2',
+    paneFolderId: string | null,
+    setPaneFolderId: (id: string | null) => void
+  ) => {
+    const paneFiles = getFilesForPane(paneFolderId);
+    const paneFolders = getFoldersForPane(paneFolderId);
+    const crumbs = getBreadcrumbsForId(paneFolderId);
+    const isAddingFolder = paneId === 'pane1' ? pane1AddingFolder : pane2AddingFolder;
+    const setIsAddingFolder = paneId === 'pane1' ? setPane1AddingFolder : setPane2AddingFolder;
+
+    return (
+      <div 
+        id={`directory-pane-${paneId}`}
+        onDragOver={handleDragOverItem}
+        onDrop={(e) => handleDropOnPaneArea(e, paneFolderId)}
+        className={`flex flex-col bg-white rounded-xl border p-4 shadow-sm min-h-[500px] transition-all duration-200 ${
+          draggingItem && draggingItem.sourcePaneId !== paneId
+            ? 'border-dashed border-blue-400 bg-blue-50/10'
+            : 'border-slate-200 hover:border-slate-300'
+        }`}
+      >
+        {/* Pane Name / Toolbar Indicator */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 select-none">
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${paneId === 'pane1' ? 'bg-amber-500' : 'bg-indigo-500'}`} />
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              {paneId === 'pane1' ? 'Left Explorer Pane' : 'Right Explorer Pane'}
+            </h3>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* FolderPlus icon button */}
+            <button
+              onClick={() => {
+                setIsAddingFolder(!isAddingFolder);
+                setInlineFolderName('');
+              }}
+              className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-slate-50 transition cursor-pointer"
+              title="Create a new folder here"
+            >
+              <FolderPlus className="w-4 h-4" />
+            </button>
+            
+            {/* Upload file button */}
+            <button
+              onClick={() => document.getElementById(`inline-upload-${paneId}`)?.click()}
+              className="p-1 text-slate-400 hover:text-emerald-600 rounded hover:bg-slate-50 transition cursor-pointer"
+              title="Upload file directly to this folder"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+            <input 
+              type="file" 
+              id={`inline-upload-${paneId}`} 
+              className="hidden" 
+              onChange={(e) => handlePaneFileUpload(e, paneFolderId)} 
+            />
+          </div>
+        </div>
+
+        {/* Local Breadcrumbs */}
+        <div className="py-2 border-b border-slate-100 flex items-center flex-wrap gap-1.5 text-xs text-slate-450 bg-slate-50/20 px-2 rounded-md my-2">
+          {crumbs.map((crumb, idx) => (
+            <React.Fragment key={crumb.id || `crumb-${paneId}-${idx}`}>
+              {idx > 0 && <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />}
+              <button
+                onClick={() => setPaneFolderId(crumb.id)}
+                className={`hover:text-blue-600 hover:underline font-medium cursor-pointer transition select-none flex items-center gap-1 shrink-0 ${
+                  crumb.id === paneFolderId ? 'text-slate-800 font-bold' : 'text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                {crumb.id === null ? (
+                  <span className="flex items-center gap-1 text-[10px] uppercase font-semibold">
+                    <Folder className="w-3 h-3 text-slate-400 animate-pulse" />
+                    <span>{crumb.name}</span>
+                  </span>
+                ) : (
+                  <span className="text-[10.5px] font-semibold">{crumb.name}</span>
+                )}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* Inline Folder Creation Form */}
+        {isAddingFolder && (
+          <form 
+            onSubmit={(e) => handleCreateInlineFolder(e, paneId, paneFolderId)}
+            className="flex items-center gap-2 p-2 border border-blue-200 bg-blue-50/30 rounded-xl mb-3 animate-fade-in"
+          >
+            <Folder className="w-4 h-4 text-blue-500 shrink-0" />
+            <input
+              type="text"
+              required
+              autoFocus
+              placeholder="Name new directory..."
+              value={inlineFolderName}
+              onChange={(e) => setInlineFolderName(e.target.value)}
+              className="flex-1 bg-white border border-slate-300 rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            />
+            <button 
+              type="submit" 
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-2.5 py-1 rounded cursor-pointer"
+              disabled={isCreatingFolder || !inlineFolderName.trim()}
+            >
+              {isCreatingFolder ? '...' : 'Create'}
+            </button>
+            <button 
+              type="button" 
+              onClick={() => setIsAddingFolder(false)}
+              className="text-slate-400 hover:text-slate-650 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </form>
+        )}
+
+        {/* Subfolders View */}
+        {paneFolders.length > 0 && (
+          <div className="mb-4">
+            <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2 select-none">Directories</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {paneFolders.map((folder) => {
+                const isItemDragged = draggingItem?.id === folder.id && draggingItem?.type === 'folder';
+                return (
+                  <div
+                    key={folder.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, folder.id, 'folder', paneId)}
+                    onDragOver={handleDragOverItem}
+                    onDrop={(e) => { e.stopPropagation(); handleDropOnFolderCard(e, folder.id); }}
+                    className={`group relative flex items-center justify-between p-2.5 border rounded-lg transition-colors cursor-pointer select-none ${
+                        isItemDragged 
+                          ? 'opacity-40 border-slate-200 bg-slate-50' 
+                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/55 hover:bg-white'
+                    }`}
+                    onClick={() => setPaneFolderId(folder.id)}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Folder className="w-3.5 h-3.5 text-blue-500 fill-blue-50/20 shrink-0" />
+                      <p className="text-xs font-semibold text-slate-800 truncate" title={folder.name}>
+                        {folder.name}
+                      </p>
+                    </div>
+                    
+                    {/* Tiny inline navigate trigger */}
+                    <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          setRenamingFolder(folder);
+                          setNewFolderInputName(folder.name);
+                        }}
+                        className="p-0.5 text-slate-400 hover:text-blue-600 rounded hover:bg-slate-100 transition cursor-pointer"
+                        title="Rename directory"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteFolder(folder.id)}
+                        className="p-0.5 text-slate-400 hover:text-red-600 rounded hover:bg-slate-100 transition cursor-pointer"
+                        title="Delete folder"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Files View Table */}
+        <div className="flex-1 overflow-x-auto min-h-[250px]">
+          {paneFiles.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full py-12 text-slate-400 border border-dashed border-slate-150 rounded-lg select-none px-4">
+              <File className="w-8 h-8 text-slate-250 mb-2" />
+              <p className="text-xs font-semibold text-slate-650 text-center">Empty Directory</p>
+              <p className="text-[10px] text-slate-400 text-center mt-1">
+                Drag files or folders from the other active explorer pane and drop here.
+              </p>
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse table-auto text-xs">
+              <thead>
+                <tr className="border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase bg-slate-50/50 select-none">
+                  <th className="px-3 py-2">Name</th>
+                  <th className="px-3 py-2">Size</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paneFiles.map((file) => {
+                  const isItemDragged = draggingItem?.id === file.id && draggingItem?.type === 'file';
+                  const isConfirmingDelete = deleteConfirmId === file.id;
+
+                  return (
+                    <tr
+                      key={file.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, file.id, 'file', paneId)}
+                      onClick={() => setPreviewFile(file)}
+                      className={`border-b border-slate-100 hover:bg-slate-50/80 transition duration-100 cursor-pointer ${
+                        isItemDragged ? 'opacity-40 bg-slate-50' : ''
+                      } ${selectedFileIds.includes(file.id) ? 'bg-blue-50/10' : ''}`}
+                    >
+                      <td className="px-3 py-2.5 max-w-[140px] truncate">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="p-1 bg-slate-50 border border-slate-150 rounded shrink-0">
+                            {getFileIcon(file.mimeType)}
+                          </span>
+                          <p className="truncate font-semibold text-slate-800" title={file.name}>
+                            {file.name}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-500 font-mono text-[10.5px] whitespace-nowrap">
+                        {formatBytes(file.size)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleDownloadFile(file.url, file.name)}
+                            className="p-1 hover:bg-slate-100 hover:text-emerald-600 rounded text-slate-450 transition cursor-pointer"
+                            title="Download secure payload locally"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          
+                          <button
+                            onClick={() => handleOpenShareModal([file.id])}
+                            className="p-1 hover:bg-slate-100 hover:text-indigo-600 rounded text-slate-450 transition cursor-pointer"
+                            title="Generate secure public share link"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setRenamingFile(file);
+                              setNewFileName(file.name);
+                            }}
+                            className="p-1 hover:bg-slate-100 hover:text-blue-600 rounded text-slate-450 transition cursor-pointer"
+                            title="Rename stored file"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+
+                          {isConfirmingDelete ? (
+                            <div className="flex items-center gap-0.5 bg-red-50 px-1 py-0.5 rounded border border-red-250 animate-fade-in">
+                              <button
+                                onClick={() => handleDeleteTrigger(file.id)}
+                                className="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[9px] font-bold transition cursor-pointer"
+                              >
+                                Del
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirmId(null)}
+                                className="p-0.5 text-slate-500 rounded cursor-pointer"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirmId(file.id)}
+                              className="p-1 text-slate-450 hover:text-red-550 rounded transition cursor-pointer"
+                              title="Destroy file from vault"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div id="dashboard-wrapper" className="space-y-6">
       {/* Header section */}
@@ -831,6 +1348,28 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
             <Share2 className="w-4 h-4 text-indigo-600" />
             <span>Shared Links ({sharedLinks.length})</span>
           </button>
+
+          <button
+            onClick={() => {
+              const nextState = !isTwoPane;
+              setIsTwoPane(nextState);
+              if (nextState) {
+                // Initialize both pane folders on first split
+                setPane1FolderId(currentFolderId);
+                setPane2FolderId(currentFolderId);
+              }
+            }}
+            id="btn-toggle-twopane"
+            className={`flex items-center gap-2 px-4 py-2 border transition-all duration-200 cursor-pointer text-sm font-semibold rounded-lg shadow-sm ${
+              isTwoPane 
+                ? 'bg-amber-650 border-amber-600 text-white hover:bg-amber-700 shadow-md scale-98'
+                : 'border-slate-250 bg-white hover:bg-slate-55 text-slate-755 hover:text-slate-900'
+            }`}
+            title="Toggle split screen explorer panes to organize with drag and drop"
+          >
+            <Columns className="w-4 h-4" />
+            <span>{isTwoPane ? 'Single View' : 'Two-Pane View'}</span>
+          </button>
         </div>
       </div>
 
@@ -864,12 +1403,13 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
       {/* Grid of upload panel and files section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Upload panel column */}
-        <div className="lg:col-span-1 space-y-4">
-          <div className="bg-white p-6 rounded-xl border border-slate-250/80 shadow-xs">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-slate-800 uppercase tracking-wider">
-                Upload Files
-              </h2>
+        {!isTwoPane && (
+          <div className="lg:col-span-1 space-y-4 animate-fade-in">
+            <div className="bg-white p-6 rounded-xl border border-slate-250/80 shadow-xs">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-slate-800 uppercase tracking-wider">
+                  Upload Files
+                </h2>
               <kbd className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-100 border border-slate-205 text-slate-450 rounded shadow-2xs font-bold uppercase tracking-normal select-none" title="Press Ctrl + U to select files for upload">
                 Ctrl+U
               </kbd>
@@ -999,10 +1539,17 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
             </div>
           </div>
         </div>
+      )}
 
         {/* Directory browser column */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white rounded-xl border border-slate-250/80 shadow-xs overflow-hidden">
+        <div className={isTwoPane ? "lg:col-span-3 space-y-4" : "lg:col-span-2 space-y-4"}>
+          {isTwoPane ? (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-fade-in" id="two-pane-split-container">
+              {renderPane('pane1', pane1FolderId, setPane1FolderId)}
+              {renderPane('pane2', pane2FolderId, setPane2FolderId)}
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-250/80 shadow-xs overflow-hidden">
             
             {/* Header controls inside list */}
             <div className="p-5 border-b border-slate-150 flex flex-col md:flex-row md:items-center gap-4 justify-between bg-slate-50/60">
@@ -1086,6 +1633,10 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
                   {filteredFolders.map((folder) => (
                     <div
                       key={folder.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, folder.id, 'folder')}
+                      onDragOver={handleDragOverItem}
+                      onDrop={(e) => { e.stopPropagation(); handleDropOnFolderCard(e, folder.id); }}
                       className="group relative flex items-center justify-between p-3 border border-slate-200 hover:border-slate-350 bg-white hover:bg-slate-50 rounded-xl transition cursor-pointer shadow-2xs"
                       onClick={() => {
                         setCurrentFolderId(folder.id);
@@ -1259,6 +1810,8 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
                       return (
                         <tr 
                           key={file.id} 
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, file.id, 'file')}
                           onClick={() => setPreviewFile(file)}
                           className={`transition duration-150 cursor-pointer ${
                             selectedFileIds.includes(file.id) 
@@ -1409,8 +1962,9 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
               )}
             </div>
           </div>
-        </div>
+        )}
       </div>
+    </div>
       
       {/* File Detail Preview Modal Trigger */}
       <FilePreviewModal 

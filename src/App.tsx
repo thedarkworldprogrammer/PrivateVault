@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Lock } from 'lucide-react';
+import { RefreshCw, Lock, Wifi, WifiOff } from 'lucide-react';
 import { User, UploadedFile, AuthResponse } from './types.js';
 import { Api } from './utils/api.js';
+import { offlineDb } from './utils/offlineDb.js';
 import Sidebar from './components/Sidebar.js';
 import Dashboard from './components/Dashboard.js';
 import AdminPanel from './components/AdminPanel.js';
@@ -32,6 +33,7 @@ function AppContent() {
   const [user, setUser] = useState<User | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [currentTab, setTab] = useState<'files' | 'trash' | 'developer' | 'admin' | 'settings'>('files');
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   
   // App Loading Indicators
   const [isInitializing, setIsInitializing] = useState(true);
@@ -42,27 +44,51 @@ function AppContent() {
   const initializeAuth = async () => {
     setIsInitializing(true);
     try {
-      const res = await Api.getCurrentUser();
-      if (res.success && res.data) {
-        setUser(res.data.user);
-        // Load user vault list as soon as verified
-        loadUserVault();
-        // Load stats telemetry representing backend setup
-        loadTelemetryInfo(res.data.user);
+      if (navigator.onLine) {
+        const res = await Api.getCurrentUser();
+        if (res.success && res.data) {
+          setUser(res.data.user);
+          localStorage.setItem('cached_offline_user', JSON.stringify(res.data.user));
+          // Load user vault list as soon as verified
+          loadUserVault();
+          // Load stats telemetry representing backend setup
+          loadTelemetryInfo(res.data.user);
+        } else {
+          const cachedUserStr = localStorage.getItem('cached_offline_user');
+          if (cachedUserStr) {
+            setUser(JSON.parse(cachedUserStr));
+            loadUserVault();
+          } else {
+            // Clear token since expired/invalid context
+            localStorage.removeItem('privatevault_token');
+            setUser(null);
+          }
+        }
       } else {
-        // Clear token since expired/invalid context
-        localStorage.removeItem('privatevault_token');
-        setUser(null);
+        const cachedUserStr = localStorage.getItem('cached_offline_user');
+        if (cachedUserStr) {
+          setUser(JSON.parse(cachedUserStr));
+          loadUserVault();
+          showInfo(`Running Offline: Restored session for ${JSON.parse(cachedUserStr).name || 'User'}`);
+        } else {
+          setUser(null);
+        }
       }
     } catch {
-      setUser(null);
+      const cachedUserStr = localStorage.getItem('cached_offline_user');
+      if (cachedUserStr) {
+        setUser(JSON.parse(cachedUserStr));
+        loadUserVault();
+      } else {
+        setUser(null);
+      }
     } finally {
       setIsInitializing(false);
     }
   };
 
   const loadTelemetryInfo = async (activeUser: User) => {
-    if (activeUser.role === 'admin') {
+    if (activeUser.role === 'admin' && navigator.onLine) {
       try {
         const statsRes = await Api.getStats();
         if (statsRes.success && statsRes.data) {
@@ -80,12 +106,30 @@ function AppContent() {
   const loadUserVault = async () => {
     setIsFilesLoading(true);
     try {
-      const res = await Api.getFiles();
-      if (res.success && res.data) {
-        setFiles(res.data);
+      if (navigator.onLine) {
+        const res = await Api.getFiles();
+        if (res.success && res.data) {
+          setFiles(res.data);
+          // Local cache save async
+          offlineDb.saveFiles(res.data);
+        } else {
+          const cached = await offlineDb.getFiles();
+          if (cached && cached.length > 0) {
+            setFiles(cached);
+          }
+        }
+      } else {
+        const cached = await offlineDb.getFiles();
+        if (cached && cached.length > 0) {
+          setFiles(cached);
+        }
       }
     } catch (e) {
       console.warn('Failed to synchronize local directory structure:', e);
+      const cached = await offlineDb.getFiles();
+      if (cached && cached.length > 0) {
+        setFiles(cached);
+      }
     } finally {
       setIsFilesLoading(false);
     }
@@ -93,9 +137,12 @@ function AppContent() {
 
   const handleRefreshUser = async () => {
     try {
-      const res = await Api.getCurrentUser();
-      if (res.success && res.data) {
-        setUser(res.data.user);
+      if (navigator.onLine) {
+        const res = await Api.getCurrentUser();
+        if (res.success && res.data) {
+          setUser(res.data.user);
+          localStorage.setItem('cached_offline_user', JSON.stringify(res.data.user));
+        }
       }
     } catch (e) {
       console.error('Failed to refresh user profile:', e);
@@ -104,6 +151,25 @@ function AppContent() {
 
   useEffect(() => {
     initializeAuth();
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      showSuccess("Internet connection restored. Synchronizing secure files vault.");
+      loadUserVault();
+    };
+    
+    const handleOffline = () => {
+      setIsOffline(true);
+      showInfo("Offline Mode: Interacting with local cached vault metadata.");
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   // Handle Authentication success callbacks
@@ -261,7 +327,7 @@ function AppContent() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 select-none">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center gap-4 text-sm text-slate-500">
             <span>Pages</span>
             <span>/</span>
             <span className="text-slate-900 font-semibold uppercase tracking-wider text-xs">
@@ -276,11 +342,26 @@ function AppContent() {
                 : 'Admin Console'}
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
+            {/* Offline Status Badge */}
+            {isOffline ? (
+              <div id="network-offline-badge" className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-xs font-bold shadow-2xs animate-pulse select-none">
+                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full inline-block animate-ping" />
+                <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Offline Mode (Cached Viewer)</span>
+              </div>
+            ) : (
+              <div id="network-online-badge" className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-full text-xs font-bold select-none">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
+                <Wifi className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>Secure Vault Online</span>
+              </div>
+            )}
+
             <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-semibold text-slate-900">{user.name}</p>
-                <p className="text-xs text-slate-500">{user.email}</p>
+              <div className="text-right hidden sm:block font-sans">
+                <p className="text-sm font-semibold text-slate-900 leading-none mb-0.5">{user.name}</p>
+                <p className="text-xs text-slate-500 leading-none">{user.email}</p>
               </div>
               <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 font-bold shadow-sm uppercase">
                 {user.name.slice(0, 2)}
@@ -301,6 +382,7 @@ function AppContent() {
               onAnalyzeFile={handleAnalyzeFile}
               isLoading={isFilesLoading}
               onRefreshFiles={loadUserVault}
+              user={user}
             />
           ) : currentTab === 'trash' ? (
             <TrashBin

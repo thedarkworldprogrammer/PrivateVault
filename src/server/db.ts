@@ -48,7 +48,8 @@ if (MONGODB_URI) {
       name: { type: String, required: true },
       role: { type: String, enum: ['user', 'admin'], default: 'user' },
       createdAt: { type: String, required: true },
-      trashRetentionDays: { type: Number, default: 30 }
+      trashRetentionDays: { type: Number, default: 30 },
+      preferences: { type: Map, of: mongoose.Schema.Types.Mixed, default: () => ({ autoScan: true, compactLayout: false, notificationsEnabled: true }) }
     });
 
     const fileSchema = new mongoose.Schema({
@@ -152,11 +153,23 @@ export const Db = {
     const searchEmail = email.toLowerCase().trim();
     if (isMongoConnected && UserModel) {
       const doc = await UserModel.findOne({ email: searchEmail }).lean();
-      return doc ? { id: doc.id, email: doc.email, password: doc.password, name: doc.name, role: doc.role, createdAt: doc.createdAt, trashRetentionDays: doc.trashRetentionDays ?? 30 } : null;
+      return doc ? { 
+        id: doc.id, 
+        email: doc.email, 
+        password: doc.password, 
+        name: doc.name, 
+        role: doc.role, 
+        createdAt: doc.createdAt, 
+        trashRetentionDays: doc.trashRetentionDays ?? 30,
+        preferences: doc.preferences ?? { autoScan: true, compactLayout: false, notificationsEnabled: true }
+      } : null;
     } else {
       const data = readLocalDb();
       const found = data.users.find(u => u.email.toLowerCase().trim() === searchEmail);
-      if (found && found.trashRetentionDays === undefined) found.trashRetentionDays = 30;
+      if (found) {
+        if (found.trashRetentionDays === undefined) found.trashRetentionDays = 30;
+        if (found.preferences === undefined) found.preferences = { autoScan: true, compactLayout: false, notificationsEnabled: true };
+      }
       return found || null;
     }
   },
@@ -164,12 +177,21 @@ export const Db = {
   findUserById: async (id: string) => {
     if (isMongoConnected && UserModel) {
       const doc = await UserModel.findOne({ id }).lean();
-      return doc ? { id: doc.id, email: doc.email, name: doc.name, role: doc.role, createdAt: doc.createdAt, trashRetentionDays: doc.trashRetentionDays ?? 30 } : null;
+      return doc ? { 
+        id: doc.id, 
+        email: doc.email, 
+        name: doc.name, 
+        role: doc.role, 
+        createdAt: doc.createdAt, 
+        trashRetentionDays: doc.trashRetentionDays ?? 30,
+        preferences: doc.preferences ?? { autoScan: true, compactLayout: false, notificationsEnabled: true }
+      } : null;
     } else {
       const data = readLocalDb();
       const found = data.users.find(u => u.id === id);
       if (!found) return null;
       if (found.trashRetentionDays === undefined) found.trashRetentionDays = 30;
+      if (found.preferences === undefined) found.preferences = { autoScan: true, compactLayout: false, notificationsEnabled: true };
       const { password, ...userWithoutPassword } = found;
       return userWithoutPassword;
     }
@@ -232,6 +254,34 @@ export const Db = {
       const idx = data.users.findIndex(u => u.id === id);
       if (idx !== -1) {
         data.users[idx].trashRetentionDays = days;
+        writeLocalDb(data);
+      }
+    }
+  },
+
+  updateUserProfile: async (id: string, name: string, email: string, preferences: any) => {
+    if (isMongoConnected && UserModel) {
+      await UserModel.updateOne({ id }, { name, email, preferences });
+    } else {
+      const data = readLocalDb();
+      const idx = data.users.findIndex(u => u.id === id);
+      if (idx !== -1) {
+        data.users[idx].name = name;
+        data.users[idx].email = email;
+        data.users[idx].preferences = preferences;
+        writeLocalDb(data);
+      }
+    }
+  },
+
+  updateUserPassword: async (id: string, passwordHash: string) => {
+    if (isMongoConnected && UserModel) {
+      await UserModel.updateOne({ id }, { password: passwordHash });
+    } else {
+      const data = readLocalDb();
+      const idx = data.users.findIndex(u => u.id === id);
+      if (idx !== -1) {
+        data.users[idx].password = passwordHash;
         writeLocalDb(data);
       }
     }

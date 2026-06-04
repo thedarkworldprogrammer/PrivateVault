@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, File, FileImage, FileText, Code, Archive, 
   Calendar, HardDrive, Info, Globe, Copy, Check, Download, ExternalLink,
@@ -7,6 +7,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { UploadedFile } from '../types.js';
 import { Api } from '../utils/api.js';
+import { offlineDb } from '../utils/offlineDb.js';
 
 interface FilePreviewModalProps {
   file: UploadedFile | null;
@@ -22,6 +23,62 @@ export default function FilePreviewModal({ file, onClose, onAnalyzeFile, onRefre
   const [organizing, setOrganizing] = useState(false);
   const [organizeError, setOrganizeError] = useState<string | null>(null);
   const [organizeSuccess, setOrganizeSuccess] = useState<string | null>(null);
+
+  const [localBlobObjUrl, setLocalBlobObjUrl] = useState<string | null>(null);
+  const [cachingStatus, setCachingStatus] = useState<'idle' | 'caching' | 'cached' | 'error'>('idle');
+
+  useEffect(() => {
+    if (!file) return;
+
+    let active = true;
+    let urlToCleanup: string | null = null;
+
+    const loadAndCache = async () => {
+      try {
+        const cachedRecord = await offlineDb.getFileBlob(file.id);
+        if (cachedRecord) {
+          if (!active) return;
+          const url = URL.createObjectURL(cachedRecord.blob);
+          urlToCleanup = url;
+          setLocalBlobObjUrl(url);
+          setCachingStatus('cached');
+          return;
+        }
+
+        // Not in cache, try to cache if online
+        if (navigator.onLine) {
+          setCachingStatus('caching');
+          const response = await fetch(file.url);
+          if (!response.ok) throw new Error('Network file retrieve status was not OK');
+          const blob = await response.blob();
+          
+          await offlineDb.cacheFileBlob(file.id, file.name, file.mimeType, blob);
+          
+          if (!active) return;
+          const url = URL.createObjectURL(blob);
+          urlToCleanup = url;
+          setLocalBlobObjUrl(url);
+          setCachingStatus('cached');
+        } else {
+          setCachingStatus('idle');
+        }
+      } catch (err) {
+        console.warn('Failed to load/cache file offline contents:', err);
+        if (active) {
+          setCachingStatus('error');
+        }
+      }
+    };
+
+    loadAndCache();
+
+    return () => {
+      active = false;
+      if (urlToCleanup) {
+        URL.revokeObjectURL(urlToCleanup);
+      }
+    };
+  }, [file]);
 
   if (!file) return null;
 
@@ -246,7 +303,7 @@ export default function FilePreviewModal({ file, onClose, onAnalyzeFile, onRefre
                 <div className="relative group max-w-full">
                   <img
                     id="preview-image-element"
-                    src={file.url}
+                    src={localBlobObjUrl || file.url}
                     alt={file.name}
                     referrerPolicy="no-referrer"
                     className="max-h-[30vh] object-contain rounded-lg border border-slate-200/60 shadow-xs bg-white mx-auto animate-fadeIn"
@@ -489,6 +546,28 @@ export default function FilePreviewModal({ file, onClose, onAnalyzeFile, onRefre
                   <span className="text-xs font-semibold text-slate-705" id="metadata-createdat">{formatDate(file.createdAt)}</span>
                 </div>
 
+                {/* Offline Caching Status */}
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-450 block">Offline Cache Status</span>
+                  {cachingStatus === 'cached' ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200" id="cache-badge-cached">
+                      <Check className="w-3 h-3 text-emerald-600" /> Available Offline
+                    </span>
+                  ) : cachingStatus === 'caching' ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 animate-pulse" id="cache-badge-loading">
+                      <RefreshCw className="w-3 h-3 animate-spin text-blue-600" /> Saving Cache...
+                    </span>
+                  ) : !navigator.onLine ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200" id="cache-badge-offline">
+                      Unavailable Offline
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200" id="cache-badge-idle">
+                      Not Cached (Reloading...)
+                    </span>
+                  )}
+                </div>
+
                 {/* Storage Pointer */}
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-slate-450 block">Internal Record ID</span>
@@ -527,13 +606,14 @@ export default function FilePreviewModal({ file, onClose, onAnalyzeFile, onRefre
             <div className="flex items-center gap-2">
               <a
                 id="preview-external-view-link"
-                href={file.url}
+                href={localBlobObjUrl || file.url}
+                download={localBlobObjUrl ? file.name : undefined}
                 target="_blank"
                 rel="noreferrer noopener"
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer select-none"
               >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open Secure Source</span>
+                {localBlobObjUrl ? <Download className="w-3.5 h-3.5" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                <span>{localBlobObjUrl ? "Download Cached (Offline)" : "Open Secure Source"}</span>
               </a>
             </div>
           </div>

@@ -1,5 +1,11 @@
 export type UserRole = 'user' | 'admin';
 
+export interface UserPreferences {
+  autoScan: boolean;
+  compactLayout: boolean;
+  notificationsEnabled: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -7,6 +13,7 @@ export interface User {
   role: UserRole;
   createdAt: string;
   trashRetentionDays?: number; // settings preference for auto-purging
+  preferences?: UserPreferences;
 }
 
 export interface FileAiAnalysis {

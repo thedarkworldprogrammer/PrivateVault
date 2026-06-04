@@ -514,6 +514,86 @@ async function startServer() {
     }
   });
 
+  // Settings: Update User Profile & Preferences
+  app.patch('/api/users/profile', authenticateToken, async (req: any, res: any) => {
+    try {
+      const { name, email, preferences } = req.body;
+
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ success: false, error: 'Name field cannot be left blank.' });
+      }
+      if (!email || typeof email !== 'string' || !email.trim()) {
+        return res.status(400).json({ success: false, error: 'Email field cannot be left blank.' });
+      }
+
+      const searchEmail = email.toLowerCase().trim();
+      if (searchEmail !== req.user.email.toLowerCase()) {
+        const emailExists = await Db.findUserByEmail(searchEmail);
+        if (emailExists) {
+          return res.status(400).json({ success: false, error: 'Email belongs to another registered account.' });
+        }
+      }
+
+      await Db.updateUserProfile(req.user.id, name.trim(), searchEmail, preferences);
+
+      // Create activity log
+      const logId = 'log_' + Math.random().toString(36).substr(2, 9);
+      await Db.createActivityLog({
+        id: logId,
+        userId: req.user.id,
+        action: 'rename',
+        details: `Updated personal profile details: name="${name.trim()}" email="${searchEmail}"`,
+        timestamp: new Date().toISOString()
+      });
+
+      res.status(200).json({ 
+        success: true, 
+        message: 'Profile information & preferences updated successfully.' 
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message || 'Failed to update user profile.' });
+    }
+  });
+
+  // Settings: Change Password
+  app.post('/api/users/change-password', authenticateToken, async (req: any, res: any) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ success: false, error: 'Please specify both current and new password.' });
+      }
+
+      // Find user with password to match bcrypt
+      const userAndPass = await Db.findUserByEmail(req.user.email);
+      if (!userAndPass) {
+        return res.status(404).json({ success: false, error: 'User account not found.' });
+      }
+
+      const isMatch = await bcryptjs.compare(currentPassword, userAndPass.password || '');
+      if (!isMatch) {
+        return res.status(400).json({ success: false, error: 'Your current password was entered incorrectly.' });
+      }
+
+      const hashedPassword = await bcryptjs.hash(newPassword, 10);
+      await Db.updateUserPassword(req.user.id, hashedPassword);
+
+      // Create activity log
+      const logId = 'log_' + Math.random().toString(36).substr(2, 9);
+      await Db.createActivityLog({
+        id: logId,
+        userId: req.user.id,
+        action: 'rename',
+        details: 'Secured account: Password updated successfully',
+        timestamp: new Date().toISOString()
+      });
+
+      res.status(200).json({ success: true, message: 'Password changed successfully.' });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message || 'Failed to update password.' });
+    }
+  });
+
   // Files: Download Selected Files as ZIP Archive
   app.post('/api/files/download-zip', authenticateToken, async (req: any, res: any) => {
     try {

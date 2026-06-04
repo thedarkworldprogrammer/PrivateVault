@@ -186,6 +186,32 @@ export const Api = {
     }
   },
 
+  updateUserProfile: async (name: string, email: string, preferences: any): Promise<ApiResponse<void>> => {
+    try {
+      const res = await fetch('/api/users/profile', {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify({ name, email, preferences }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: 'Failed to update user profile and preferences.' };
+    }
+  },
+
+  changePassword: async (currentPassword: string, newPassword: string): Promise<ApiResponse<void>> => {
+    try {
+      const res = await fetch('/api/users/change-password', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: 'Failed to complete password secure update.' };
+    }
+  },
+
   renameFile: async (fileId: string, newName: string): Promise<ApiResponse<UploadedFile>> => {
     try {
       const res = await fetch(`/api/files/${fileId}/rename`, {
