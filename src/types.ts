@@ -92,3 +92,12 @@ export interface SharedLink {
   password?: string | null; // optional password
 }
 
+export interface PasswordResetToken {
+  id: string;
+  email: string;
+  token: string;
+  expiresAt: string; // ISO String
+  isUsed: boolean;
+  createdAt: string; // ISO String
+}
+

@@ -1,4 +1,4 @@
-import { Folder, Users, LogOut, Database, Cloud, Lock, BarChart3, AlertCircle, HardDrive, Terminal, Trash2, Settings, X } from 'lucide-react';
+import { Folder, Users, LogOut, Database, Cloud, Lock, BarChart3, AlertCircle, HardDrive, Terminal, Trash2, Settings, X, Sun, Moon } from 'lucide-react';
 import { User, UploadedFile } from '../types.js';
 
 interface SidebarProps {
@@ -13,9 +13,11 @@ interface SidebarProps {
   files: UploadedFile[];
   isOpen?: boolean;
   onClose?: () => void;
+  theme?: 'light' | 'dark';
+  onChangeTheme?: (theme: 'light' | 'dark') => void;
 }
 
-export default function Sidebar({ user, currentTab, setTab, onLogout, stats, files, isOpen, onClose }: SidebarProps) {
+export default function Sidebar({ user, currentTab, setTab, onLogout, stats, files, isOpen, onClose, theme = 'light', onChangeTheme }: SidebarProps) {
   const isUsingMongo = stats?.isUsingMongo ?? false;
   const isUsingCloudinary = stats?.isUsingCloudinary ?? false;
 
@@ -214,6 +216,42 @@ export default function Sidebar({ user, currentTab, setTab, onLogout, stats, fil
                 Local Disk
               </span>
             )}
+          </div>
+        </div>
+
+        {/* Theme Toggle option */}
+        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 flex items-center justify-between" id="sidebar-theme-toggle-container">
+          <span className="text-xs font-mono tracking-wide text-slate-400 flex items-center gap-1.5">
+            {theme === 'dark' ? <Moon className="w-3.5 h-3.5 text-blue-400" /> : <Sun className="w-3.5 h-3.5 text-amber-500" />}
+            Theme Mode
+          </span>
+          <div className="flex bg-slate-900 p-0.5 rounded-md border border-slate-800">
+            <button
+              id="sidebar-theme-btn-light"
+              onClick={() => onChangeTheme?.('light')}
+              className={`p-1.5 rounded text-xs font-bold leading-none flex items-center gap-1.5 transition-all cursor-pointer ${
+                theme === 'light'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+              title="Switch to light theme"
+            >
+              <Sun className="w-3.5 h-3.5" />
+              <span className="text-[10px]">Light</span>
+            </button>
+            <button
+              id="sidebar-theme-btn-dark"
+              onClick={() => onChangeTheme?.('dark')}
+              className={`p-1.5 rounded text-xs font-bold leading-none flex items-center gap-1.5 transition-all cursor-pointer ${
+                theme === 'dark'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:text-slate-100'
+              }`}
+              title="Switch to dark theme"
+            >
+              <Moon className="w-3.5 h-3.5" />
+              <span className="text-[10px]">Dark</span>
+            </button>
           </div>
         </div>
 

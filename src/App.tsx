@@ -9,6 +9,7 @@ import AdminPanel from './components/AdminPanel.js';
 import AuthLayout from './components/AuthLayout.js';
 import DeveloperConsole from './components/DeveloperConsole.js';
 import PublicShare from './components/PublicShare.js';
+import ResetPassword from './components/ResetPassword.js';
 import TrashBin from './components/TrashBin.js';
 import UserSettings from './components/UserSettings.js';
 import { NotificationProvider, useNotification } from './components/NotificationCenter.js';
@@ -26,12 +27,31 @@ function AppContent() {
   const isShareRoute = window.location.pathname.startsWith('/share/');
   const shareId = isShareRoute ? window.location.pathname.split('/').pop() || '' : '';
 
+  const isResetRoute = window.location.pathname === '/reset-password';
+  const resetToken = new URLSearchParams(window.location.search).get('token') || '';
+
   if (isShareRoute) {
     return <PublicShare shareId={shareId} />;
   }
 
+  if (isResetRoute) {
+    return <ResetPassword token={resetToken} />;
+  }
+
   const [user, setUser] = useState<User | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
   const [currentTab, setTab] = useState<'files' | 'trash' | 'developer' | 'admin' | 'settings'>('files');
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -190,9 +210,9 @@ function AppContent() {
   };
 
   // Process File Upload via API
-  const handleUploadFile = async (rawFile: File, folderId?: string | null): Promise<boolean> => {
+  const handleUploadFile = async (rawFile: File, folderId?: string | null, onProgress?: (percent: number) => void): Promise<boolean> => {
     try {
-      const res = await Api.uploadFile(rawFile, folderId);
+      const res = await Api.uploadFile(rawFile, folderId, onProgress);
       if (res.success && res.data) {
         // Append newly created file entry to files list reactively
         setFiles(prev => [res.data!, ...prev]);
@@ -313,7 +333,7 @@ function AppContent() {
 
   // Logged-in full layout flow
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-200">
       {/* Dark Navy brand Sidebar (Left) */}
       <Sidebar
         user={user}
@@ -324,23 +344,25 @@ function AppContent() {
         files={files}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        theme={theme}
+        onChangeTheme={setTheme}
       />
 
       {/* Main Content Viewer (Right) */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 shrink-0 select-none">
-          <div className="flex items-center gap-3 sm:gap-4 text-sm text-slate-500 min-w-0">
+        <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sm:px-8 shrink-0 select-none transition-colors duration-200">
+          <div className="flex items-center gap-3 sm:gap-4 text-sm text-slate-500 dark:text-slate-400 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-905 transition cursor-pointer"
+              className="md:hidden p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-905 transition cursor-pointer"
               title="Open Navigation"
             >
               <Menu className="w-5 h-5" />
             </button>
             <span className="hidden sm:inline">Pages</span>
             <span className="hidden sm:inline">/</span>
-            <span className="text-slate-900 font-semibold uppercase tracking-wider text-xs truncate">
+            <span className="text-slate-900 dark:text-slate-100 font-semibold uppercase tracking-wider text-xs truncate">
               {currentTab === 'files' 
                 ? 'Dashboard' 
                 : currentTab === 'trash' 
@@ -355,16 +377,16 @@ function AppContent() {
           <div className="flex items-center gap-4 sm:gap-6 shrink-0">
             {/* Offline Status Badge */}
             {isOffline ? (
-              <div id="network-offline-badge" className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-xs font-bold shadow-2xs animate-pulse select-none">
+              <div id="network-offline-badge" className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 rounded-full text-xs font-bold shadow-2xs animate-pulse select-none">
                 <span className="w-1.5 h-1.5 bg-amber-500 rounded-full inline-block animate-ping" />
-                <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <WifiOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                 <span className="hidden sm:inline">Offline Mode (Cached Viewer)</span>
                 <span className="inline sm:hidden">Offline</span>
               </div>
             ) : (
-              <div id="network-online-badge" className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-full text-xs font-bold select-none">
+              <div id="network-online-badge" className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-150 dark:border-emerald-900/40 rounded-full text-xs font-bold select-none">
                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
-                <Wifi className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <Wifi className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span className="hidden sm:inline">Secure Vault Online</span>
                 <span className="inline sm:hidden">Online</span>
               </div>
@@ -372,10 +394,10 @@ function AppContent() {
 
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block font-sans">
-                <p className="text-sm font-semibold text-slate-900 leading-none mb-0.5">{user.name}</p>
-                <p className="text-xs text-slate-500 leading-none">{user.email}</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-none mb-0.5">{user.name}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-none">{user.email}</p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 font-bold shadow-sm uppercase">
+              <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-700 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold shadow-sm uppercase">
                 {user.name.slice(0, 2)}
               </div>
             </div>
@@ -383,7 +405,7 @@ function AppContent() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
+        <main className="flex-1 overflow-y-auto p-8 bg-slate-50/50 dark:bg-slate-900/40 transition-colors duration-200">
           {currentTab === 'files' ? (
             user.role === 'admin' ? (
               <AdminPanel currentUser={user} />

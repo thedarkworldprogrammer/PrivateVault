@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
-import { User, UploadedFile, UserRole, ApiKey, FileAiAnalysis, ActivityLog, Folder, SharedLink } from '../types.js';
+import { User, UploadedFile, UserRole, ApiKey, FileAiAnalysis, ActivityLog, Folder, SharedLink, PasswordResetToken } from '../types.js';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -28,6 +28,7 @@ let ApiKeyModel: mongoose.Model<any> | null = null;
 let ActivityLogModel: mongoose.Model<any> | null = null;
 let FolderModel: mongoose.Model<any> | null = null;
 let SharedLinkModel: mongoose.Model<any> | null = null;
+let PasswordResetModel: mongoose.Model<any> | null = null;
 let isMongoConnected = false;
 
 if (MONGODB_URI) {
@@ -102,12 +103,22 @@ if (MONGODB_URI) {
       password: { type: String, default: null }
     });
 
+    const passwordResetSchema = new mongoose.Schema({
+      id: { type: String, required: true, unique: true },
+      email: { type: String, required: true },
+      token: { type: String, required: true, unique: true },
+      expiresAt: { type: String, required: true },
+      isUsed: { type: Boolean, default: false },
+      createdAt: { type: String, required: true }
+    });
+
     UserModel = mongoose.model('User', userSchema);
     FileModel = mongoose.model('File', fileSchema);
     ApiKeyModel = mongoose.model('ApiKey', apiKeySchema);
     ActivityLogModel = mongoose.model('ActivityLog', activityLogSchema);
     FolderModel = mongoose.model('Folder', folderSchema);
     SharedLinkModel = mongoose.model('SharedLink', sharedLinkSchema);
+    PasswordResetModel = mongoose.model('PasswordReset', passwordResetSchema);
   } catch (error) {
     console.warn('Failed to initialize MongoDB schemas. Fallback is active.', error);
   }
@@ -121,6 +132,7 @@ interface LocalDbData {
   activityLogs?: ActivityLog[];
   folders?: Folder[];
   sharedLinks?: SharedLink[];
+  passwordResets?: PasswordResetToken[];
 }
 
 function readLocalDb(): LocalDbData {
@@ -131,9 +143,10 @@ function readLocalDb(): LocalDbData {
     if (!parsed.activityLogs) parsed.activityLogs = [];
     if (!parsed.folders) parsed.folders = [];
     if (!parsed.sharedLinks) parsed.sharedLinks = [];
+    if (!parsed.passwordResets) parsed.passwordResets = [];
     return parsed;
   } catch (err) {
-    return { users: [], files: [], apiKeys: [], activityLogs: [], folders: [], sharedLinks: [] };
+    return { users: [], files: [], apiKeys: [], activityLogs: [], folders: [], sharedLinks: [], passwordResets: [] };
   }
 }
 
@@ -142,6 +155,7 @@ function writeLocalDb(data: LocalDbData) {
   if (!data.activityLogs) data.activityLogs = [];
   if (!data.folders) data.folders = [];
   if (!data.sharedLinks) data.sharedLinks = [];
+  if (!data.passwordResets) data.passwordResets = [];
   fs.writeFileSync(DB_JSON_PATH, JSON.stringify(data, null, 2));
 }
 
@@ -785,6 +799,52 @@ export const Db = {
       const idx = data.sharedLinks.findIndex(sl => sl.id === id);
       if (idx !== -1) {
         data.sharedLinks[idx].viewsCount = (data.sharedLinks[idx].viewsCount || 0) + 1;
+        writeLocalDb(data);
+      }
+    }
+  },
+
+  createPasswordResetToken: async (resetToken: PasswordResetToken): Promise<PasswordResetToken> => {
+    if (isMongoConnected && PasswordResetModel) {
+      const doc = new PasswordResetModel(resetToken);
+      await doc.save();
+    } else {
+      const data = readLocalDb();
+      if (!data.passwordResets) data.passwordResets = [];
+      data.passwordResets.push(resetToken);
+      writeLocalDb(data);
+    }
+    return resetToken;
+  },
+
+  findPasswordResetToken: async (token: string): Promise<PasswordResetToken | null> => {
+    if (isMongoConnected && PasswordResetModel) {
+      const doc = await PasswordResetModel.findOne({ token, isUsed: false }).lean();
+      return doc ? {
+        id: doc.id,
+        email: doc.email,
+        token: doc.token,
+        expiresAt: doc.expiresAt,
+        isUsed: doc.isUsed,
+        createdAt: doc.createdAt
+      } : null;
+    } else {
+      const data = readLocalDb();
+      if (!data.passwordResets) data.passwordResets = [];
+      const found = data.passwordResets.find(pr => pr.token === token && !pr.isUsed);
+      return found || null;
+    }
+  },
+
+  markPasswordResetTokenUsed: async (token: string): Promise<void> => {
+    if (isMongoConnected && PasswordResetModel) {
+      await PasswordResetModel.updateOne({ token }, { isUsed: true });
+    } else {
+      const data = readLocalDb();
+      if (!data.passwordResets) data.passwordResets = [];
+      const idx = data.passwordResets.findIndex(pr => pr.token === token);
+      if (idx !== -1) {
+        data.passwordResets[idx].isUsed = true;
         writeLocalDb(data);
       }
     }

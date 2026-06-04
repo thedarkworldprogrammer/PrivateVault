@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Lock, Mail, User, ShieldAlert, KeyRound, Eye, EyeOff, Check, AlertCircle } from 'lucide-react';
+import { Lock, Mail, User, ShieldAlert, KeyRound, Eye, EyeOff, Check, AlertCircle, Info } from 'lucide-react';
 import { AuthResponse } from '../types.js';
+import { Api } from '../utils/api.js';
 
 interface AuthLayoutProps {
   onAuthSuccess: (authData: AuthResponse) => void;
@@ -79,6 +80,7 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [simulatedLink, setSimulatedLink] = useState('');
 
   const strength = getPasswordStrength(password);
 
@@ -88,6 +90,7 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
     setEmail('');
     setPassword('');
     setName('');
+    setSimulatedLink('');
   };
 
   const handleModeChange = (newMode: AuthMode) => {
@@ -101,8 +104,13 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
     setSuccessMsg(null);
 
     // Validation
-    if (!email.trim() || !password.trim()) {
-      setErrorMsg('Please specify both an email address and a password.');
+    if (!email.trim()) {
+      setErrorMsg('Please specify your registered email address.');
+      return;
+    }
+
+    if (mode !== 'reset' && !password.trim()) {
+      setErrorMsg('Please specify your account password.');
       return;
     }
 
@@ -129,19 +137,17 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
           setErrorMsg(res.error || 'Failed to complete registration flow.');
         }
       } else if (mode === 'reset') {
-        const res = await onResetPasswordApi(email, password);
+        const res = await Api.forgotPassword(email);
         if (res.success) {
-          setSuccessMsg('Your password has been changed successfully. You may now sign in.');
+          setSuccessMsg(res.data?.message || 'Check your email inbox for a secure recovery link.');
+          if (res.data?.resetLink) {
+            setSimulatedLink(res.data.resetLink);
+          } else if ((res as any).resetLink) {
+            setSimulatedLink((res as any).resetLink);
+          }
           setEmail('');
-          setPassword('');
-          // Switch to signin after brief delay
-          setTimeout(() => {
-            setMode('signin');
-            setErrorMsg(null);
-            setSuccessMsg(null);
-          }, 4000);
         } else {
-          setErrorMsg(res.error || 'Failed to locate email or reset password.');
+          setErrorMsg(res.error || 'Failed to request password reset link.');
         }
       }
     } catch (e: any) {
@@ -166,7 +172,7 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
         <p className="mt-2 text-center text-sm text-slate-500">
           {mode === 'signin' && 'Sign in to access your secure vaults'}
           {mode === 'signup' && 'Create your credentials to launch a private vault'}
-          {mode === 'reset' && 'Specify register email to update your account passphrase'}
+          {mode === 'reset' && 'Request a secure password recovery credentials link'}
         </p>
       </div>
 
@@ -182,9 +188,23 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
           )}
 
           {successMsg && (
-            <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs flex gap-2 font-medium">
-              <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-              <span>{successMsg}</span>
+            <div className="mb-4 bg-emerald-55 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs flex flex-col gap-2 font-medium">
+              <div className="flex gap-2">
+                <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                <span>{successMsg}</span>
+              </div>
+              {simulatedLink && (
+                <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs space-y-1 text-slate-850">
+                  <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                    <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>Local Sandbox Cryptolink:</span>
+                  </div>
+                  <p className="text-slate-650 leading-relaxed">Email delivery is simulated in the sandbox. Open the link below to load the secure reset password screen:</p>
+                  <a href={simulatedLink} className="block mt-2 font-mono font-bold text-blue-600 hover:underline break-all bg-white border border-blue-200 p-2 rounded text-center shadow-xs">
+                    Test Password Reset Screen &rarr;
+                  </a>
+                </div>
+              )}
             </div>
           )}
 
@@ -233,135 +253,137 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
             </div>
 
             {/* Field: Passphrase */}
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">
-                  {mode === 'reset' ? 'New Password' : 'Password'}
-                </label>
-                {mode === 'signin' && (
+            {mode !== 'reset' && (
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">
+                    Password
+                  </label>
+                  {mode === 'signin' && (
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange('reset')}
+                      className="text-xs hover:underline text-blue-600 font-bold cursor-pointer"
+                    >
+                      Forgot Password?
+                    </button>
+                  )}
+                </div>
+                <div className="mt-1 relative rounded-md shadow-xs">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <KeyRound className="h-4.5 w-4.5" />
+                  </div>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter account password"
+                    className="block w-full pl-10 pr-10 py-2.5 sm:text-sm bg-slate-50/50 hover:bg-slate-50 border border-slate-350 focus:bg-white text-slate-900 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  />
                   <button
                     type="button"
-                    onClick={() => handleModeChange('reset')}
-                    className="text-xs hover:underline text-blue-600 font-semibold cursor-pointer"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
-                    Reset password
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
+                </div>
+
+                {/* Password Strength Indicator */}
+                {mode === 'signup' && password && (
+                  <div className="mt-2.5 p-3 bg-slate-50 border border-slate-205 rounded-xl space-y-2.5 transition-all duration-300">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Password Security Strength
+                      </span>
+                      <span className={`text-[10px] font-extrabold uppercase tracking-widest ${colorTextClasses[strength.color]}`}>
+                        {strength.label}
+                      </span>
+                    </div>
+
+                    {/* Visual Strength Meter Bars */}
+                    <div className="grid grid-cols-5 gap-1.5 h-1.5">
+                      {[1, 2, 3, 4, 5].map((level) => {
+                        const isActive = level <= strength.score;
+                        let barColor = 'bg-slate-200';
+                        if (isActive) {
+                          if (strength.score <= 1) barColor = 'bg-red-500';
+                          else if (strength.score === 2) barColor = 'bg-orange-500';
+                          else if (strength.score === 3) barColor = 'bg-amber-500';
+                          else if (strength.score === 4) barColor = 'bg-emerald-500';
+                          else barColor = 'bg-emerald-600';
+                        }
+                        return (
+                          <div
+                            key={level}
+                            className={`h-full rounded-xs transition-colors duration-300 ${barColor}`}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/* Requirements Sub-List */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 pt-2 border-t border-slate-250/55">
+                      <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none">
+                        {strength.criteria.length ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
+                        )}
+                        <span className={strength.criteria.length ? 'text-slate-700' : 'text-slate-400'}>
+                          At least 8 characters
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none">
+                        {strength.criteria.hasUpper ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
+                        )}
+                        <span className={strength.criteria.hasUpper ? 'text-slate-700' : 'text-slate-400'}>
+                          Uppercase letter [A-Z]
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none">
+                        {strength.criteria.hasLower ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
+                        )}
+                        <span className={strength.criteria.hasLower ? 'text-slate-700' : 'text-slate-400'}>
+                          Lowercase letter [a-z]
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none">
+                        {strength.criteria.hasNumber ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
+                        )}
+                        <span className={strength.criteria.hasNumber ? 'text-slate-700' : 'text-slate-400'}>
+                          Numerical digit [0-9]
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none sm:col-span-2">
+                        {strength.criteria.hasSpecial ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
+                        )}
+                        <span className={strength.criteria.hasSpecial ? 'text-slate-700' : 'text-slate-400'}>
+                          Special symbol (e.g. !@#$%^&*)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
-              <div className="mt-1 relative rounded-md shadow-xs">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <KeyRound className="h-4.5 w-4.5" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={mode === 'reset' ? "Set new password passphrase" : "Enter account password"}
-                  className="block w-full pl-10 pr-10 py-2.5 sm:text-sm bg-slate-50/50 hover:bg-slate-50 border border-slate-350 focus:bg-white text-slate-900 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-
-              {/* Password Strength Indicator */}
-              {(mode === 'signup' || mode === 'reset') && password && (
-                <div className="mt-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                      Password Security Strength
-                    </span>
-                    <span className={`text-[10px] font-extrabold uppercase tracking-widest ${colorTextClasses[strength.color]}`}>
-                      {strength.label}
-                    </span>
-                  </div>
-
-                  {/* Visual Strength Meter Bars */}
-                  <div className="grid grid-cols-5 gap-1.5 h-1.5">
-                    {[1, 2, 3, 4, 5].map((level) => {
-                      const isActive = level <= strength.score;
-                      let barColor = 'bg-slate-200';
-                      if (isActive) {
-                        if (strength.score <= 1) barColor = 'bg-red-500';
-                        else if (strength.score === 2) barColor = 'bg-orange-500';
-                        else if (strength.score === 3) barColor = 'bg-amber-500';
-                        else if (strength.score === 4) barColor = 'bg-emerald-500';
-                        else barColor = 'bg-emerald-600';
-                      }
-                      return (
-                        <div
-                          key={level}
-                          className={`h-full rounded-xs transition-colors duration-300 ${barColor}`}
-                        />
-                      );
-                    })}
-                  </div>
-
-                  {/* Requirements Sub-List */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 pt-2 border-t border-slate-200/50">
-                    <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none">
-                      {strength.criteria.length ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                      ) : (
-                        <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
-                      )}
-                      <span className={strength.criteria.length ? 'text-slate-700' : 'text-slate-400'}>
-                        At least 8 characters
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none">
-                      {strength.criteria.hasUpper ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                      ) : (
-                        <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
-                      )}
-                      <span className={strength.criteria.hasUpper ? 'text-slate-700' : 'text-slate-400'}>
-                        Uppercase letter [A-Z]
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none">
-                      {strength.criteria.hasLower ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                      ) : (
-                        <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
-                      )}
-                      <span className={strength.criteria.hasLower ? 'text-slate-700' : 'text-slate-400'}>
-                        Lowercase letter [a-z]
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none">
-                      {strength.criteria.hasNumber ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                      ) : (
-                        <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
-                      )}
-                      <span className={strength.criteria.hasNumber ? 'text-slate-700' : 'text-slate-400'}>
-                        Numerical digit [0-9]
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-[10px] font-medium leading-none sm:col-span-2">
-                      {strength.criteria.hasSpecial ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                      ) : (
-                        <div className="w-3.5 h-3.5 border-2 border-slate-300 rounded-full shrink-0" />
-                      )}
-                      <span className={strength.criteria.hasSpecial ? 'text-slate-700' : 'text-slate-400'}>
-                        Special symbol (e.g. !@#$%^&*)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
 
 
 
@@ -384,7 +406,7 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
                   <span>
                     {mode === 'signin' && 'Sign In'}
                     {mode === 'signup' && 'Create an Account'}
-                    {mode === 'reset' && 'Reset password'}
+                    {mode === 'reset' && 'Request Reset Link'}
                   </span>
                 )}
               </button>

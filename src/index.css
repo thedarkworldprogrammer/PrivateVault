@@ -1,1 +1,153 @@
 @import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+/* Universal Dark Mode Overrides and theme adaptations */
+.dark {
+  color-scheme: dark;
+}
+
+/* Ensure smooth theme transitions */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
+
+.dark body {
+  background-color: #030712 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Containers & Cards */
+.dark .bg-slate-50 {
+  background-color: #030712 !important;
+}
+
+.dark .bg-slate-50\/50 {
+  background-color: rgba(3, 7, 18, 0.4) !important;
+}
+
+.dark .bg-white {
+  background-color: #0b1329 !important; /* Elegant dark navy card background */
+}
+
+.dark .bg-blue-50 {
+  background-color: rgba(29, 78, 216, 0.15) !important;
+  color: #60a5fa !important;
+}
+
+.dark .bg-emerald-50 {
+  background-color: rgba(4, 120, 87, 0.15) !important;
+  color: #34d399 !important;
+}
+
+.dark .bg-red-50 {
+  background-color: rgba(185, 28, 28, 0.15) !important;
+  color: #f87171 !important;
+}
+
+.dark .bg-amber-50 {
+  background-color: rgba(180, 83, 9, 0.15) !important;
+  color: #fbbf24 !important;
+}
+
+/* Borders */
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-slate-150 {
+  border-color: #1e293b !important; /* Slate 800 */
+}
+
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #1e293b !important;
+}
+
+/* Typographic adaptions */
+.dark .text-slate-900,
+.dark .text-slate-950,
+.dark .text-slate-800,
+.dark .text-gray-900,
+.dark .text-gray-800 {
+  color: #f8fafc !important; /* High contrast white */
+}
+
+.dark .text-slate-700,
+.dark .text-slate-705,
+.dark .text-slate-650,
+.dark .text-slate-600,
+.dark .text-gray-700,
+.dark .text-gray-600 {
+  color: #cbd5e1 !important; /* Medium bright slate */
+}
+
+.dark .text-slate-500,
+.dark .text-slate-450,
+.dark .text-slate-400,
+.dark .text-gray-500,
+.dark .text-gray-400 {
+  color: #94a3b8 !important; /* Dim slate descriptor text */
+}
+
+.dark .text-slate-905 {
+  color: #ffffff !important;
+}
+
+.dark .text-blue-700,
+.dark .text-blue-750 {
+  color: #60a5fa !important;
+}
+
+/* Interactive elements */
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-slate-100\/50:hover,
+.dark .hover\:bg-slate-50\/50:hover {
+  background-color: #111a33 !important;
+}
+
+.dark input, 
+.dark select, 
+.dark textarea {
+  background-color: #0f172a !important;
+  border-color: #273549 !important;
+  color: #f1f5f9 !important;
+}
+
+.dark input::placeholder {
+  color: #475569 !important;
+}
+
+/* Sidebar specific adaptations (keep it dark and responsive) */
+.dark #app-sidebar {
+  background-color: #090f1d !important;
+  border-color: #151f32 !important;
+}
+
+/* Shadows */
+.dark .shadow-sm {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Fix active badges in tables etc */
+.dark .bg-emerald-50 text-emerald-800 {
+  color: #34d399 !important;
+}
+.dark .text-emerald-800 {
+  color: #34d399 !important;
+}
+.dark .text-red-800 {
+  color: #f87171 !important;
+}
+.dark .text-blue-800 {
+  color: #60a5fa !important;
+}
+.dark .text-amber-800 {
+  color: #fbbf24 !important;
+}
+
+/* Fix specific modals style */
+.dark .shadow-md, .dark .shadow-xl {
+  background-color: #0e172c !important;
+  border-color: #1f2d4d !important;
+}

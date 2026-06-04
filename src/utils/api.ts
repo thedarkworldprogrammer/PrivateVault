@@ -80,6 +80,44 @@ export const Api = {
     }
   },
 
+  forgotPassword: async (email: string): Promise<ApiResponse<{ message: string; resetLink?: string }>> => {
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ email }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: 'Failed to request password reset link.' };
+    }
+  },
+
+  validateResetToken: async (token: string): Promise<ApiResponse<{ email: string }>> => {
+    try {
+      const res = await fetch(`/api/auth/validate-reset-token?token=${encodeURIComponent(token)}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: 'Failed to validate secure reset link.' };
+    }
+  },
+
+  applyResetPassword: async (token: string, password: string): Promise<ApiResponse<void>> => {
+    try {
+      const res = await fetch('/api/auth/apply-reset-password', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ token, password }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: 'Failed to reset password.' };
+    }
+  },
+
   // File endpoints
   getFiles: async (): Promise<ApiResponse<UploadedFile[]>> => {
     try {
@@ -93,23 +131,61 @@ export const Api = {
     }
   },
 
-  uploadFile: async (file: File, folderId?: string | null): Promise<ApiResponse<UploadedFile>> => {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (folderId) {
-        formData.append('folderId', folderId);
+  uploadFile: async (file: File, folderId?: string | null, onProgress?: (percent: number) => void): Promise<ApiResponse<UploadedFile>> => {
+    return new Promise((resolve) => {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        if (folderId) {
+          formData.append('folderId', folderId);
+        }
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/files', true);
+
+        // Retrieve Bearer auth headers
+        const headers = getHeaders(true);
+        Object.entries(headers).forEach(([key, val]) => {
+          xhr.setRequestHeader(key, val);
+        });
+
+        // Add real physical progress updates
+        if (onProgress) {
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              onProgress(percent);
+            }
+          };
+        }
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response);
+            } catch (err) {
+              resolve({ success: false, error: 'Malformed response received from servers.' });
+            }
+          } else {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response);
+            } catch {
+              resolve({ success: false, error: `Critical status ${xhr.status} received from storage service.` });
+            }
+          }
+        };
+
+        xhr.onerror = () => {
+          resolve({ success: false, error: 'Network error occurred during physical file upload.' });
+        };
+
+        xhr.send(formData);
+      } catch (e: any) {
+        resolve({ success: false, error: e.message || 'Network error occurred during physical file upload.' });
       }
-      
-      const res = await fetch('/api/files', {
-        method: 'POST',
-        headers: getHeaders(true),
-        body: formData,
-      });
-      return await res.json();
-    } catch (e: any) {
-      return { success: false, error: 'Network error occurred during physical file upload.' };
-    }
+    });
   },
 
   deleteFile: async (fileId: string): Promise<ApiResponse<void>> => {

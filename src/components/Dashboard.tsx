@@ -13,7 +13,7 @@ import { useNotification } from './NotificationCenter.js';
 
 interface DashboardProps {
   files: UploadedFile[];
-  onUploadFile: (file: File, folderId?: string | null) => Promise<boolean>;
+  onUploadFile: (file: File, folderId?: string | null, onProgress?: (percent: number) => void) => Promise<boolean>;
   onDeleteFile: (fileId: string) => Promise<boolean>;
   onDeleteMultipleFiles: (fileIds: string[]) => Promise<boolean>;
   onRenameFile: (fileId: string, newName: string) => Promise<boolean>;
@@ -32,6 +32,8 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
   const [fileFilter, setFileFilter] = useState<'all' | 'image' | 'pdf' | 'archive' | 'document'>('all');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number>(0);
+  const [uploadingName, setUploadingName] = useState<string>('');
   const [alertInfo, setAlertInfo] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   
@@ -328,8 +330,12 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
     if (!rawFile) return;
     
     setIsUploading(true);
+    setUploadPercent(0);
+    setUploadingName(rawFile.name);
     try {
-      const success = await onUploadFile(rawFile, targetFolderId);
+      const success = await onUploadFile(rawFile, targetFolderId, (percent) => {
+        setUploadPercent(percent);
+      });
       if (success) {
         showSuccess(`Uploaded and encrypted "${rawFile.name}" successfully!`);
         onRefreshFiles?.();
@@ -782,9 +788,13 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
     }
 
     setIsUploading(true);
+    setUploadPercent(0);
+    setUploadingName(rawFile.name);
     setAlertInfo(null);
 
-    const success = await onUploadFile(rawFile, currentFolderId);
+    const success = await onUploadFile(rawFile, currentFolderId, (percent) => {
+      setUploadPercent(percent);
+    });
     setIsUploading(false);
 
     if (success) {
@@ -1553,10 +1563,30 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
               />
 
               {isUploading ? (
-                <div className="space-y-3">
-                  <RefreshCw className="w-10 h-10 text-blue-600 animate-spin mx-auto" />
-                  <p className="text-sm font-medium text-slate-700">Uploading to private vault...</p>
-                  <p className="text-xs text-slate-500">Encrypting payload bytes</p>
+                <div className="space-y-4 w-full px-4 py-2">
+                  <div className="flex flex-col items-center justify-center">
+                    <RefreshCw className="w-10 h-10 text-blue-605 text-blue-600 animate-spin mb-2" />
+                    <p className="text-xs font-semibold text-slate-800 truncate max-w-[200px]" title={uploadingName}>
+                      {uploadingName || 'Uploading...'}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-1.5 w-full">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                      <span>{uploadPercent === 100 ? 'Securing inside Cloudinary...' : 'Uploading secure bytes...'}</span>
+                      <span className="font-mono text-blue-600">{uploadPercent}%</span>
+                    </div>
+                    {/* Visual Progress Bar */}
+                    <div className="w-full bg-slate-200/80 rounded-full h-2 overflow-hidden shadow-inner border border-slate-250/20">
+                      <div 
+                        className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${uploadPercent}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-slate-450 font-mono leading-none">
+                    {uploadPercent === 100 ? 'Finalizing secure vault links...' : `Transferred ${uploadPercent}% of package`}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -2654,6 +2684,44 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
               >
                 Close Catalog List
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Floating Upload Progress Overlay Card */}
+      {isUploading && (
+        <div className="fixed bottom-6 right-6 z-50 w-80 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/80 p-4 font-sans transition-all duration-300">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-blue-100/80 text-blue-600 rounded-xl">
+              <Upload className="w-5 h-5 animate-bounce" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-slate-800 tracking-wide uppercase">
+                  {uploadPercent === 100 ? 'Securing Cloud Database' : 'Transferring file'}
+                </span>
+                <span className="text-xs font-extrabold text-blue-600 font-mono">{uploadPercent}%</span>
+              </div>
+              <p className="text-xs text-slate-600 font-semibold truncate mb-3" title={uploadingName}>
+                {uploadingName || 'Processing data...'}
+              </p>
+              
+              {/* Progress Bar Container */}
+              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+                <div 
+                  className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${uploadPercent}%` }}
+                ></div>
+              </div>
+              
+              <div className="flex justify-between items-center mt-2.5 text-[9px] text-slate-400 font-mono leading-none">
+                <span>STAGE: {uploadPercent === 100 ? 'Cloudinary upload' : 'Local transport stream'}</span>
+                {uploadPercent === 100 ? (
+                  <span className="text-emerald-600 font-extrabold animate-[pulse_1s_infinite]">PROCESSING</span>
+                ) : (
+                  <span>ACTIVE</span>
+                )}
+              </div>
             </div>
           </div>
         </div>
