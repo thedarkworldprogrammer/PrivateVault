@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Lock, Wifi, WifiOff } from 'lucide-react';
+import { RefreshCw, Lock, Wifi, WifiOff, Menu } from 'lucide-react';
 import { User, UploadedFile, AuthResponse } from './types.js';
 import { Api } from './utils/api.js';
 import { offlineDb } from './utils/offlineDb.js';
@@ -34,6 +34,7 @@ function AppContent() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [currentTab, setTab] = useState<'files' | 'trash' | 'developer' | 'admin' | 'settings'>('files');
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // App Loading Indicators
   const [isInitializing, setIsInitializing] = useState(true);
@@ -321,16 +322,25 @@ function AppContent() {
         onLogout={handleSignOut}
         stats={telemetryStats}
         files={files}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
 
       {/* Main Content Viewer (Right) */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 select-none">
-          <div className="flex items-center gap-4 text-sm text-slate-500">
-            <span>Pages</span>
-            <span>/</span>
-            <span className="text-slate-900 font-semibold uppercase tracking-wider text-xs">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 shrink-0 select-none">
+          <div className="flex items-center gap-3 sm:gap-4 text-sm text-slate-500 min-w-0">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-905 transition cursor-pointer"
+              title="Open Navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="hidden sm:inline">Pages</span>
+            <span className="hidden sm:inline">/</span>
+            <span className="text-slate-900 font-semibold uppercase tracking-wider text-xs truncate">
               {currentTab === 'files' 
                 ? 'Dashboard' 
                 : currentTab === 'trash' 
@@ -342,19 +352,21 @@ function AppContent() {
                 : 'Admin Console'}
             </span>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 sm:gap-6 shrink-0">
             {/* Offline Status Badge */}
             {isOffline ? (
-              <div id="network-offline-badge" className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-xs font-bold shadow-2xs animate-pulse select-none">
+              <div id="network-offline-badge" className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-xs font-bold shadow-2xs animate-pulse select-none">
                 <span className="w-1.5 h-1.5 bg-amber-500 rounded-full inline-block animate-ping" />
                 <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>Offline Mode (Cached Viewer)</span>
+                <span className="hidden sm:inline">Offline Mode (Cached Viewer)</span>
+                <span className="inline sm:hidden">Offline</span>
               </div>
             ) : (
-              <div id="network-online-badge" className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-full text-xs font-bold select-none">
+              <div id="network-online-badge" className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-full text-xs font-bold select-none">
                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
                 <Wifi className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>Secure Vault Online</span>
+                <span className="hidden sm:inline">Secure Vault Online</span>
+                <span className="inline sm:hidden">Online</span>
               </div>
             )}
 

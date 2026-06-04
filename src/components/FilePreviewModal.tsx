@@ -355,7 +355,7 @@ export default function FilePreviewModal({ file, onClose, onAnalyzeFile, onRefre
                     </div>
 
                     {/* Metrics grid info */}
-                    <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                       <div>
                         <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
                           Leak Audit Status

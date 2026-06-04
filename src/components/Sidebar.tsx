@@ -1,4 +1,4 @@
-import { Folder, Users, LogOut, Database, Cloud, Lock, BarChart3, AlertCircle, HardDrive, Terminal, Trash2, Settings } from 'lucide-react';
+import { Folder, Users, LogOut, Database, Cloud, Lock, BarChart3, AlertCircle, HardDrive, Terminal, Trash2, Settings, X } from 'lucide-react';
 import { User, UploadedFile } from '../types.js';
 
 interface SidebarProps {
@@ -11,11 +11,18 @@ interface SidebarProps {
     isUsingCloudinary: boolean;
   };
   files: UploadedFile[];
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-export default function Sidebar({ user, currentTab, setTab, onLogout, stats, files }: SidebarProps) {
+export default function Sidebar({ user, currentTab, setTab, onLogout, stats, files, isOpen, onClose }: SidebarProps) {
   const isUsingMongo = stats?.isUsingMongo ?? false;
   const isUsingCloudinary = stats?.isUsingCloudinary ?? false;
+
+  const handleTabClick = (tab: 'files' | 'trash' | 'developer' | 'admin' | 'settings') => {
+    setTab(tab);
+    if (onClose) onClose();
+  };
 
   // Storage metric logic inputs
   const totalSizeBytes = files.reduce((acc, file) => acc + (file.size || 0), 0);
@@ -33,89 +40,114 @@ export default function Sidebar({ user, currentTab, setTab, onLogout, stats, fil
   };
 
   return (
-    <aside id="app-sidebar" className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between text-slate-100 flex-shrink-0 h-screen select-none">
-      {/* Upper sidebar brand and navigation */}
-      <div>
-        {/* Brand logo header */}
-        <div className="h-16 flex items-center px-6 border-b border-slate-800 gap-3">
-          <div className="bg-blue-600 p-2 rounded-lg text-white">
-            <Lock className="w-6 h-6" />
+    <>
+      {/* Mobile background backdrop overlay */}
+      {isOpen && (
+        <div 
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-xs md:hidden cursor-pointer animate-fade-in"
+          id="sidebar-backdrop"
+        />
+      )}
+
+      <aside 
+        id="app-sidebar" 
+        className={`w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between text-slate-100 flex-shrink-0 h-screen select-none transition-transform duration-300 ease-in-out fixed inset-y-0 left-0 md:static md:translate-x-0 z-45 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        {/* Upper sidebar brand and navigation */}
+        <div>
+          {/* Brand logo header */}
+          <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-600 p-2 rounded-lg text-white">
+                <Lock className="w-6 h-6" />
+              </div>
+              <span className="font-sans font-bold text-lg tracking-tight text-white">
+                PrivateVault
+              </span>
+            </div>
+            {/* Mobile close button */}
+            <button 
+              onClick={onClose}
+              className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer"
+              title="Close menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <span className="font-sans font-bold text-lg tracking-tight text-white">
-            PrivateVault
-          </span>
-        </div>
 
-        {/* Tab Selection Navigation */}
-        <nav className="p-4 space-y-1">
-          <button
-            id="nav-tab-files"
-            onClick={() => setTab('files')}
-            className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
-              currentTab === 'files'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-            }`}
-          >
-            <Folder className="w-5 h-5 flex-shrink-0" />
-            <span>My Files</span>
-          </button>
-
-          <button
-            id="nav-tab-trash"
-            onClick={() => setTab('trash')}
-            className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
-              currentTab === 'trash'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-            }`}
-          >
-            <Trash2 className="w-5 h-5 flex-shrink-0" />
-            <span>Trash Bin</span>
-          </button>
-
-          <button
-            id="nav-tab-settings"
-            onClick={() => setTab('settings')}
-            className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
-              currentTab === 'settings'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-            }`}
-          >
-            <Settings className="w-5 h-5 flex-shrink-0" />
-            <span>User Settings</span>
-          </button>
-
-          <button
-            id="nav-tab-developer"
-            onClick={() => setTab('developer')}
-            className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
-              currentTab === 'developer'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-            }`}
-          >
-            <Terminal className="w-5 h-5 flex-shrink-0" />
-            <span>Dev Platform</span>
-          </button>
-
-          {user.role === 'admin' && (
+          {/* Tab Selection Navigation */}
+          <nav className="p-4 space-y-1">
             <button
-              id="nav-tab-admin"
-              onClick={() => setTab('admin')}
+              id="nav-tab-files"
+              onClick={() => handleTabClick('files')}
               className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
-                currentTab === 'admin'
+                currentTab === 'files'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
               }`}
             >
-              <Users className="w-5 h-5 flex-shrink-0" />
-              <span>Admin Console</span>
+              <Folder className="w-5 h-5 flex-shrink-0" />
+              <span>My Files</span>
             </button>
-          )}
-        </nav>
-      </div>
+
+            <button
+              id="nav-tab-trash"
+              onClick={() => handleTabClick('trash')}
+              className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
+                currentTab === 'trash'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+              }`}
+            >
+              <Trash2 className="w-5 h-5 flex-shrink-0" />
+              <span>Trash Bin</span>
+            </button>
+
+            <button
+              id="nav-tab-settings"
+              onClick={() => handleTabClick('settings')}
+              className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
+                currentTab === 'settings'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+              }`}
+            >
+              <Settings className="w-5 h-5 flex-shrink-0" />
+              <span>User Settings</span>
+            </button>
+
+            <button
+              id="nav-tab-developer"
+              onClick={() => handleTabClick('developer')}
+              className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
+                currentTab === 'developer'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+              }`}
+            >
+              <Terminal className="w-5 h-5 flex-shrink-0" />
+              <span>Dev Platform</span>
+            </button>
+
+            {user.role === 'admin' && (
+              <button
+                id="nav-tab-admin"
+                onClick={() => handleTabClick('admin')}
+                className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
+                  currentTab === 'admin'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                }`}
+              >
+                <Users className="w-5 h-5 flex-shrink-0" />
+                <span>Admin Console</span>
+              </button>
+            )}
+          </nav>
+        </div>
 
       {/* Footer system details and logged-in user profile */}
       <div className="p-4 border-t border-slate-800 space-y-4">
@@ -223,5 +255,6 @@ export default function Sidebar({ user, currentTab, setTab, onLogout, stats, fil
         </div>
       </div>
     </aside>
+    </>
   );
 }

@@ -96,6 +96,30 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
   const [sortBy, setSortBy] = useState<'name' | 'createdAt' | 'size' | 'mimeType'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
+  // Recent Files Interactions State
+  const [recentFileIds, setRecentFileIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('recent_files');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const trackFileInteraction = (fileId: string) => {
+    if (!fileId) return;
+    setRecentFileIds(prev => {
+      const updated = [fileId, ...prev.filter(id => id !== fileId)].slice(0, 5);
+      localStorage.setItem('recent_files', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handlePreviewFile = (file: UploadedFile) => {
+    setPreviewFile(file);
+    trackFileInteraction(file.id);
+  };
+
   const handleSort = (field: 'name' | 'createdAt' | 'size' | 'mimeType') => {
     if (sortBy === field) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -154,6 +178,7 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
     setSharePassword('');
     setGeneratedShare(null);
     setShowShareModal(true);
+    fileIds.forEach(id => trackFileInteraction(id));
   };
 
   const handleGenerateShareLink = async () => {
@@ -422,6 +447,30 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
     } finally {
       setIsMoving(false);
     }
+  };
+
+  const getRecentFilesList = () => {
+    // Filter active (non-trashed) files
+    const activeFiles = files.filter(f => !f.isTrashed);
+
+    // Map stored interaction ids to actual active files
+    const interacted = recentFileIds
+      .map(id => activeFiles.find(f => f.id === id))
+      .filter(Boolean) as UploadedFile[];
+
+    // Backfill with the latest active files sorted by createdAt descending
+    const backfill = [...activeFiles]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const result: UploadedFile[] = [...interacted];
+    for (const file of backfill) {
+      if (result.length >= 5) break;
+      if (!result.some(r => r.id === file.id)) {
+        result.push(file);
+      }
+    }
+
+    return result.slice(0, 5);
   };
 
   const getBreadcrumbsForId = (folderId: string | null) => {
@@ -822,6 +871,11 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
 
   // Secure file download execution
   const handleDownloadFile = async (url: string, filename: string) => {
+    // Track download interaction
+    const matchedFile = files.find(f => f.url === url || f.name === filename);
+    if (matchedFile) {
+      trackFileInteraction(matchedFile.id);
+    }
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to retrieve file from repository');
@@ -1148,7 +1202,7 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
                       key={file.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, file.id, 'file', paneId)}
-                      onClick={() => setPreviewFile(file)}
+                      onClick={() => handlePreviewFile(file)}
                       className={`border-b border-slate-100 hover:bg-slate-50/80 transition duration-100 cursor-pointer ${
                         isItemDragged ? 'opacity-40 bg-slate-50' : ''
                       } ${selectedFileIds.includes(file.id) ? 'bg-blue-50/10' : ''}`}
@@ -1397,6 +1451,69 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Recent Files Quick-Access Section */}
+      {files.filter(f => !f.isTrashed).length > 0 && (
+        <div className="bg-slate-50/40 rounded-xl border border-slate-200 p-4 space-y-3.5 animate-fade-in mb-6" id="recent-files-quick-access">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-slate-500 animate-pulse" />
+            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider select-none">
+              Recent Files Quick Access
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 animate-fade-in">
+            {getRecentFilesList().map((file) => (
+              <div
+                key={`recent-${file.id}`}
+                onClick={() => handlePreviewFile(file)}
+                className="group relative bg-white border border-slate-200 hover:border-blue-400 rounded-xl p-3.5 transition-all duration-200 cursor-pointer hover:shadow-2xs flex flex-col justify-between h-32 select-none"
+              >
+                {/* File Icon & Info */}
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className="p-2 bg-slate-50 border border-slate-100 rounded-lg shrink-0 group-hover:bg-blue-50/50 transition">
+                    {getFileIcon(file.mimeType)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-slate-800 truncate" title={file.name}>
+                      {file.name}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      {formatBytes(file.size)}
+                    </p>
+                    <span className="inline-block mt-1 text-[9px] font-semibold bg-slate-100/90 text-slate-600 px-1.5 py-0.5 rounded-md truncate max-w-full">
+                      {getCleanMimeLabel(file.mimeType)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bottom Row: Date Context & Action Links */}
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-400">
+                  <span className="truncate" title={formatDate(file.createdAt)}>
+                    {formatDate(file.createdAt)}
+                  </span>
+                  {/* Quick Actions (visible on hover) */}
+                  <div className="flex items-center gap-1 bg-white/95 pl-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => handleDownloadFile(file.url, file.name)}
+                      className="p-1 hover:bg-slate-100 text-slate-500 hover:text-emerald-600 rounded transition cursor-pointer"
+                      title="Download secure file"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleOpenShareModal([file.id])}
+                      className="p-1 hover:bg-slate-100 text-slate-550 hover:text-indigo-600 rounded transition cursor-pointer"
+                      title="Share secure link"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1812,7 +1929,7 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
                           key={file.id} 
                           draggable
                           onDragStart={(e) => handleDragStart(e, file.id, 'file')}
-                          onClick={() => setPreviewFile(file)}
+                          onClick={() => handlePreviewFile(file)}
                           className={`transition duration-150 cursor-pointer ${
                             selectedFileIds.includes(file.id) 
                               ? 'bg-blue-50/40 hover:bg-blue-50/60' 
