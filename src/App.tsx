@@ -385,17 +385,21 @@ function AppContent() {
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
           {currentTab === 'files' ? (
-            <Dashboard
-              files={files}
-              onUploadFile={handleUploadFile}
-              onDeleteFile={handleDeleteFile}
-              onDeleteMultipleFiles={handleDeleteMultipleFiles}
-              onRenameFile={handleRenameFile}
-              onAnalyzeFile={handleAnalyzeFile}
-              isLoading={isFilesLoading}
-              onRefreshFiles={loadUserVault}
-              user={user}
-            />
+            user.role === 'admin' ? (
+              <AdminPanel currentUser={user} />
+            ) : (
+              <Dashboard
+                files={files}
+                onUploadFile={handleUploadFile}
+                onDeleteFile={handleDeleteFile}
+                onDeleteMultipleFiles={handleDeleteMultipleFiles}
+                onRenameFile={handleRenameFile}
+                onAnalyzeFile={handleAnalyzeFile}
+                isLoading={isFilesLoading}
+                onRefreshFiles={loadUserVault}
+                user={user}
+              />
+            )
           ) : currentTab === 'trash' ? (
             <TrashBin
               files={files}

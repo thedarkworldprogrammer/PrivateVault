@@ -89,8 +89,17 @@ export default function Sidebar({ user, currentTab, setTab, onLogout, stats, fil
                   : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
               }`}
             >
-              <Folder className="w-5 h-5 flex-shrink-0" />
-              <span>My Files</span>
+              {user.role === 'admin' ? (
+                <>
+                  <BarChart3 className="w-5 h-5 flex-shrink-0" />
+                  <span>Admin Dashboard</span>
+                </>
+              ) : (
+                <>
+                  <Folder className="w-5 h-5 flex-shrink-0" />
+                  <span>My Files</span>
+                </>
+              )}
             </button>
 
             <button
@@ -132,20 +141,7 @@ export default function Sidebar({ user, currentTab, setTab, onLogout, stats, fil
               <span>Dev Platform</span>
             </button>
 
-            {user.role === 'admin' && (
-              <button
-                id="nav-tab-admin"
-                onClick={() => handleTabClick('admin')}
-                className={`w-full flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 gap-3 ${
-                  currentTab === 'admin'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-                }`}
-              >
-                <Users className="w-5 h-5 flex-shrink-0" />
-                <span>Admin Console</span>
-              </button>
-            )}
+
           </nav>
         </div>
 

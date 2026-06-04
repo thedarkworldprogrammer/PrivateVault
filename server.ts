@@ -113,20 +113,9 @@ async function startServer() {
         return res.status(400).json({ success: false, error: 'Email already registered. Please sign in instead.' });
       }
 
-      // Determine registration role
+      // Determine registration role: strictly ignore user role input and adminKey
       let userRole: 'user' | 'admin' = 'user';
-      if (role === 'admin') {
-        // Simple admin code key check to prevent arbitrary registration, fallback to 'admin' simple checking
-        if (adminKey === 'admin123' || adminKey === 'admin') {
-          userRole = 'admin';
-        } else {
-          return res.status(400).json({ success: false, error: 'Invalid admin registration key.' });
-        }
-      }
-
-      // First user registered can also automatically be admin for ease of testing
-      const allUsers = await Db.getAllUsers();
-      if (allUsers.length === 0) {
+      if (email.toLowerCase().trim() === 'himanshutiwarykhrhna@gmail.com') {
         userRole = 'admin';
       }
 
@@ -178,6 +167,12 @@ async function startServer() {
       }
 
       const { password: _, ...userProfile } = userAndPass;
+
+      if (userAndPass.email.toLowerCase().trim() === 'himanshutiwarykhrhna@gmail.com' && userAndPass.role !== 'admin') {
+        userAndPass.role = 'admin';
+        userProfile.role = 'admin';
+        await Db.updateUserRole(userAndPass.id, 'admin');
+      }
 
       const token = jwt.sign({ id: userAndPass.id, email: userAndPass.email, role: userAndPass.role }, JWT_SECRET, { expiresIn: '7d' });
 
@@ -1590,13 +1585,39 @@ ${sampleContent}`;
     }
   });
 
-  // Admin Operations: Retrieve users list
+  // Admin Operations: Retrieve users list with file and activity stats
   app.get('/api/admin/users', authenticateToken, requireAdmin, async (req: any, res: any) => {
     try {
       const users = await Db.getAllUsers();
-      res.status(200).json({ success: true, data: users });
+      const enrichedUsers = [];
+      for (const u of users) {
+        const userFiles = await Db.getFilesByUserId(u.id);
+        const userLogs = await Db.getActivityLogsByUserId(u.id);
+        
+        enrichedUsers.push({
+          ...u,
+          fileCount: userFiles.length,
+          totalSize: userFiles.reduce((sum, f) => sum + (f.size || 0), 0),
+          activityCount: userLogs.length,
+          lastActivity: userLogs.length > 0 ? userLogs[0].timestamp : null
+        });
+      }
+      res.status(200).json({ success: true, data: enrichedUsers });
     } catch (e: any) {
       res.status(500).json({ success: false, error: 'Failed to retrieve register user accounts.' });
+    }
+  });
+
+  // Admin Operations: Retrieve a specific user's folder/files and activity metadata
+  app.get('/api/admin/users/:id/files', authenticateToken, requireAdmin, async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const files = await Db.getFilesByUserId(id);
+      const folders = await Db.getFoldersByUserId(id);
+      const activityLogs = await Db.getActivityLogsByUserId(id);
+      res.status(200).json({ success: true, data: { files, folders, activityLogs } });
+    } catch (e: any) {
+      res.status(550).json({ success: false, error: 'Failed to retrieve files for specified user.' });
     }
   });
 

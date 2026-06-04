@@ -75,8 +75,6 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'user' | 'admin'>('user');
-  const [adminKey, setAdminKey] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -90,8 +88,6 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
     setEmail('');
     setPassword('');
     setName('');
-    setRole('user');
-    setAdminKey('');
   };
 
   const handleModeChange = (newMode: AuthMode) => {
@@ -115,11 +111,6 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
       return;
     }
 
-    if (mode === 'signup' && role === 'admin' && !adminKey.trim()) {
-      setErrorMsg('Please specify your administrator signup key (e.g. admin123).');
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -131,7 +122,7 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
           setErrorMsg(res.error || 'Incorrect email or password combination.');
         }
       } else if (mode === 'signup') {
-        const res = await onRegisterApi(email, password, name, role, adminKey);
+        const res = await onRegisterApi(email, password, name, 'user', '');
         if (res.success && res.data) {
           onAuthSuccess(res.data);
         } else {
@@ -372,58 +363,7 @@ export default function AuthLayout({ onAuthSuccess, onLoginApi, onRegisterApi, o
               )}
             </div>
 
-            {/* Field: Role Selectors (Only on signup to ease testing) */}
-            {mode === 'signup' && (
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60 transition-all duration-150">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                  System Permission Tier
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRole('user')}
-                    className={`py-2 px-3 border rounded-lg text-xs font-semibold cursor-pointer text-center transition ${
-                      role === 'user'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-250'
-                    }`}
-                  >
-                    Regular User
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRole('admin')}
-                    className={`py-2 px-3 border rounded-lg text-xs font-semibold cursor-pointer text-center transition ${
-                      role === 'admin'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-250'
-                    }`}
-                  >
-                    System Admin
-                  </button>
-                </div>
 
-                {role === 'admin' && (
-                  <div className="mt-3">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                      <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Admin Register Key</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={adminKey}
-                      onChange={(e) => setAdminKey(e.target.value)}
-                      placeholder="Use 'admin123' to register as admin"
-                      className="block w-full mt-1.5 px-3 py-1.5 text-xs text-slate-950 font-mono tracking-wider placeholder-slate-400 bg-white border border-slate-350 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-800"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      * Security Check: Set value to <code className="font-mono bg-slate-200 text-slate-600 px-1 rounded">admin123</code> to qualify for structural access.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Submit layout action button */}
             <div className="pt-2">

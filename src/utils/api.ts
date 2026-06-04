@@ -263,6 +263,18 @@ export const Api = {
     }
   },
 
+  getAdminUserFiles: async (userId: string): Promise<ApiResponse<{ files: UploadedFile[], folders: Folder[], activityLogs: ActivityLog[] }>> => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/files`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: 'Failed to retrieve selected user vault data.' };
+    }
+  },
+
   updateUserRole: async (userId: string, role: 'admin' | 'user'): Promise<ApiResponse<void>> => {
     try {
       const res = await fetch(`/api/admin/users/${userId}/role`, {
