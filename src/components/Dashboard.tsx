@@ -21,9 +21,25 @@ interface DashboardProps {
   isLoading: boolean;
   onRefreshFiles?: () => void;
   user?: User;
+  currentFolderId?: string | null;
+  onFolderChange?: (folderId: string | null) => void;
+  onBreadcrumbsChange?: (crumbs: { id: string | null; name: string }[]) => void;
 }
 
-export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteMultipleFiles, onRenameFile, onAnalyzeFile, isLoading, onRefreshFiles, user }: DashboardProps) {
+export default function Dashboard({ 
+  files, 
+  onUploadFile, 
+  onDeleteFile, 
+  onDeleteMultipleFiles, 
+  onRenameFile, 
+  onAnalyzeFile, 
+  isLoading, 
+  onRefreshFiles, 
+  user,
+  currentFolderId: propFolderId,
+  onFolderChange,
+  onBreadcrumbsChange
+}: DashboardProps) {
   const { showSuccess, showError, showInfo } = useNotification();
   const compactMode = user?.preferences?.compactLayout ?? false;
   const paddingClass = compactMode ? 'px-4 py-1.5' : 'px-5 py-4';
@@ -53,7 +69,16 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
 
   // --- Folder System State and Operations ---
   const [folders, setFolders] = useState<FolderType[]>([]);
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [localFolderId, setLocalFolderId] = useState<string | null>(null);
+  
+  const currentFolderId = propFolderId !== undefined ? propFolderId : localFolderId;
+  const setCurrentFolderId = (id: string | null) => {
+    if (onFolderChange) {
+      onFolderChange(id);
+    } else {
+      setLocalFolderId(id);
+    }
+  };
   const [isFoldersLoading, setIsFoldersLoading] = useState(false);
 
   // --- Optional Two-Pane States ---
@@ -495,6 +520,12 @@ export default function Dashboard({ files, onUploadFile, onDeleteFile, onDeleteM
   const getBreadcrumbs = () => {
     return getBreadcrumbsForId(currentFolderId);
   };
+
+  useEffect(() => {
+    if (onBreadcrumbsChange) {
+      onBreadcrumbsChange(getBreadcrumbsForId(currentFolderId));
+    }
+  }, [currentFolderId, folders, onBreadcrumbsChange]);
 
   const getFilesForPane = (paneFolderId: string | null) => {
     return files.filter(f => {

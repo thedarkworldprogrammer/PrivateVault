@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Lock, Wifi, WifiOff, Menu } from 'lucide-react';
+import { RefreshCw, Lock, Wifi, WifiOff, Menu, Sun, Moon, ChevronRight, Folder } from 'lucide-react';
 import { User, UploadedFile, AuthResponse } from './types.js';
 import { Api } from './utils/api.js';
 import { offlineDb } from './utils/offlineDb.js';
@@ -55,6 +55,9 @@ function AppContent() {
   const [currentTab, setTab] = useState<'files' | 'trash' | 'developer' | 'admin' | 'settings'>('files');
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [dashboardBreadcrumbs, setDashboardBreadcrumbs] = useState<{ id: string | null; name: string }[]>([]);
   
   // App Loading Indicators
   const [isInitializing, setIsInitializing] = useState(true);
@@ -344,8 +347,6 @@ function AppContent() {
         files={files}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        theme={theme}
-        onChangeTheme={setTheme}
       />
 
       {/* Main Content Viewer (Right) */}
@@ -392,6 +393,34 @@ function AppContent() {
               </div>
             )}
 
+            {/* Theme Toggle in Header Navbar */}
+            <div id="header-theme-toggle-container" className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200/50 dark:border-slate-700 select-none">
+              <button
+                id="header-theme-btn-light"
+                onClick={() => setTheme('light')}
+                className={`p-1 rounded-md text-xs font-bold leading-none flex items-center justify-center transition-all cursor-pointer ${
+                  theme === 'light'
+                    ? 'bg-white text-amber-500 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                }`}
+                title="Switch to light theme"
+              >
+                <Sun className="w-4 h-4" />
+              </button>
+              <button
+                id="header-theme-btn-dark"
+                onClick={() => setTheme('dark')}
+                className={`p-1 rounded-md text-xs font-bold leading-none flex items-center justify-center transition-all cursor-pointer ${
+                  theme === 'dark'
+                    ? 'bg-slate-700 text-amber-400 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                }`}
+                title="Switch to dark theme"
+              >
+                <Moon className="w-4 h-4" />
+              </button>
+            </div>
+
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block font-sans">
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-none mb-0.5">{user.name}</p>
@@ -403,6 +432,43 @@ function AppContent() {
             </div>
           </div>
         </header>
+
+        {/* Dynamic Folders Breadcrumbs Trail below header */}
+        {currentTab === 'files' && user?.role !== 'admin' && dashboardBreadcrumbs.length > 0 && (
+          <div id="dashboard-header-breadcrumbs" className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800/85 px-4 sm:px-8 py-2.5 flex items-center justify-between gap-4 text-xs font-sans transition-colors duration-200 shrink-0">
+            <div className="flex items-center flex-wrap gap-1.5 min-w-0">
+              <span className="text-slate-450 dark:text-slate-500 font-mono uppercase tracking-wider text-[10px] select-none mr-1">Path:</span>
+              {dashboardBreadcrumbs.map((crumb, idx) => (
+                <div key={crumb.id || 'root-crumb-sub'} className="flex items-center gap-1.5 min-w-0">
+                  {idx > 0 && <ChevronRight className="w-3.5 h-3.5 text-slate-350 dark:text-slate-600 shrink-0" />}
+                  <button
+                    onClick={() => {
+                      setCurrentFolderId(crumb.id);
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer flex items-center gap-1 select-none text-xs truncate ${
+                      crumb.id === currentFolderId
+                        ? 'bg-blue-50 dark:bg-blue-950/45 text-blue-600 dark:text-blue-400 font-bold border border-blue-100 dark:border-blue-900/30'
+                        : 'text-slate-605 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+                    }`}
+                    title={`Navigate to ${crumb.name}`}
+                  >
+                    {crumb.id === null && (
+                      <Folder className="w-3.5 h-3.5 text-slate-455 dark:text-slate-500 fill-slate-300/20 shrink-0" />
+                    )}
+                    <span>{crumb.name}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+            
+            {/* Folder helper stats info */}
+            {currentFolderId && (
+              <span className="hidden md:inline text-[10px] text-slate-400 dark:text-slate-500 font-mono uppercase tracking-wider select-none">
+                Viewing subfolder vault
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-8 bg-slate-50/50 dark:bg-slate-900/40 transition-colors duration-200">
@@ -420,6 +486,9 @@ function AppContent() {
                 isLoading={isFilesLoading}
                 onRefreshFiles={loadUserVault}
                 user={user}
+                currentFolderId={currentFolderId}
+                onFolderChange={setCurrentFolderId}
+                onBreadcrumbsChange={setDashboardBreadcrumbs}
               />
             )
           ) : currentTab === 'trash' ? (
